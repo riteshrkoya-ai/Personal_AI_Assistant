@@ -56,41 +56,40 @@ The project is designed as a backend-first platform. By decoupling the core brai
 ### Assistant Routing Concept
 The user interacts with one assistant, but internally the backend routes the request to the right module using an internal assistant router.
 
-           +-------------------------------------------------+
-           |              User Interface Layer               |
-           | (CLI / Web UI / Desktop / Voice / WhatsApp)     |
-           +-------------------------------------------------+
-                                    |
-                                    v
-                           [ /chat Endpoint ]
-                                    |
-                                    v
-                        +-----------------------+
-                        |   Assistant Router    |
-                        +-----------------------+
-                                    |
-  +-----------------+---------------+---------------+-----------------+
-  |                 |               |               |                 |
-  v                 v               v               v                 v
+               +-------------------------------------------------+
+               |              User Interface Layer               |
+               | (CLI / Web UI / Desktop / Voice / WhatsApp)     |
+               +-------------------------------------------------+
+                                        |
+                                        v
+                               [ /chat Endpoint ]
+                                        |
+                                        v
+                            +-----------------------+
+                            |   Assistant Router    |
+                            +-----------------------+
+                                        |
+      +-----------------+---------------+---------------+-----------------+
+      |                 |               |               |                 |
+      v                 v               v               v                 v
 +-----------+    +-------------+  +-----------+  +-------------+   +-------------+
 |  General  |    | Future Self |  |   Task    |  |   Memory    |   | Daily Plan  |
 |   Chat    |    |   Service   |  |  Service  |  |   Service   |   |   Service   |
 +-----------+    +-------------+  +-----------+  +-------------+   +-------------+
-|                 |               |               |                 |
-+-----------------+---------------+---------------+-----------------+
-|
-v
-+-------------------------------+
-|           LLM Layer           |
-|      (LiteLLM + Ollama)       |
-+-------------------------------+
-|
-v
-+-------------------------------+
-|          Data Layer           |
-|  (SQLite + Future Vector DB)  |
-+-------------------------------+
-
+      |                 |               |               |                 |
+      +-----------------+---------------+---------------+-----------------+
+                                        |
+                                        v
+                        +-------------------------------+
+                        |           LLM Layer           |
+                        |      (LiteLLM + Ollama)       |
+                        +-------------------------------+
+                                        |
+                                        v
+                        +-------------------------------+
+                        |          Data Layer           |
+                        |  (SQLite + Future Vector DB)  |
+                        +-------------------------------+
 
 ---
 
