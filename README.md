@@ -1,4 +1,4 @@
-# 🤖 Personal AI Assistant
+# Personal AI Assistant
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![Framework](https://img.shields.io/badge/backend-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
@@ -9,7 +9,7 @@
 
 ---
 
-## 📌 Overview
+##  Overview
 
 The **Personal AI Assistant** is a Python-based, modular AI assistant platform designed to help users manage their personal goals, daily tasks, reminders, memory, and productivity through conversational AI.
 
@@ -21,7 +21,7 @@ This is not meant to be just another chatbot. The goal is to build an assistant 
 
 ---
 
-## 🎯 Project Vision
+##  Project Vision
 
 Many people have long-term goals but struggle with daily execution. For example, a person may want to:
 * Become a better software engineer
@@ -46,53 +46,6 @@ Long-term identity ➔ Personal goals ➔ Daily tasks ➔ Reminders ➔ Reflecti
 * ✉️ **Summarize** Gmail messages.
 * 🗣️ **Support** English and Telugu voice interaction.
 * 📲 **Connect** to WhatsApp or other communication channels.
-
----
-
-## 🛠️ High-Level Architecture & Routing
-
-The project is designed as a backend-first platform. By decoupling the core brain from the user interface, different interfaces can be added later (CLI, Web UI, Desktop app, Mobile app, Voice interface, WhatsApp channel) while the core backend remains the same.
-
-### Assistant Routing Concept
-The user interacts with one assistant, but internally the backend routes the request to the right module using an internal assistant router.
-+-------------------------------------------------+
-
-
-               +-------------------------------------------------+
-               |              User Interface Layer               |
-               | (CLI / Web UI / Desktop / Voice / WhatsApp)     |
-               +-------------------------------------------------+
-                                        |
-                                        v
-                               [ /chat Endpoint ]
-                                        |
-                                        v
-                            +-----------------------+
-                            |   Assistant Router    |
-                            +-----------------------+
-                                        |
-      +-----------------+---------------+---------------+-----------------+
-      |                 |               |               |                 |
-      v                 v               v               v                 v
-+-----------+    +-------------+  +-----------+  +-------------+   +-------------+
-|  General  |    | Future Self |  |   Task    |  |   Memory    |   | Daily Plan  |
-|   Chat    |    |   Service   |  |  Service  |  |   Service   |   |   Service   |
-+-----------+    +-------------+  +-----------+  +-------------+   +-------------+
-      |                 |               |               |                 |
-      +-----------------+---------------+---------------+-----------------+
-                                        |
-                                        v
-                        +-------------------------------+
-                        |           LLM Layer           |
-                        |      (LiteLLM + Ollama)       |
-                        +-------------------------------+
-                                        |
-                                        v
-                        +-------------------------------+
-                        |          Data Layer           |
-                        |  (SQLite + Future Vector DB)  |
-                        +-------------------------------+
-
 
 
 ## 🚀 V1 Scope & Features
@@ -151,65 +104,6 @@ V1 is the first working version of the project. The purpose of V1 is to prove th
 | **Voice Stack** | Whisper / Whisper.cpp, Piper TTS | Planned local English & Telugu speech pipelines |
 
 ---
-
-## 📂 Repository Structure
-
-Personal_AI_Assistant_Project/
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # Application entry point and startup routines
-│   │   ├── config.py               # Settings management and environment parsing
-│   │   │
-│   │   ├── api/                    # API Endpoints & Request Handlers
-│   │   │   ├── health.py
-│   │   │   ├── chat.py
-│   │   │   ├── future_self.py
-│   │   │   ├── tasks.py
-│   │   │   └── memory.py
-│   │   │
-│   │   ├── services/               # Core Business & Engine Logic
-│   │   │   ├── llm_service.py
-│   │   │   ├── agent_router.py
-│   │   │   ├── future_self_service.py
-│   │   │   ├── task_service.py
-│   │   │   └── memory_service.py
-│   │   │
-│   │   ├── db/                     # Data Persistence & Session Lifecycle
-│   │   │   ├── models.py
-│   │   │   ├── session.py
-│   │   │   └── database.py
-│   │   │
-│   │   └── schemas/                # Inbound/Outbound Validation Layouts
-│   │       └── schemas.py
-│   │
-│   └── requirements.txt
-│
-├── assistant_cli.py                # Terminal client for running the V1 framework
-├── docs/
-│   └── SDD.md                      # Software Design Document
-│
-├── tests/                          # Automated execution verification suite
-├── .gitignore
-└── README.md
-
----
-
-## 📋 V1 API Contract Endpoints
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| **GET** | `/health` | System Verification |
-| **POST** | `/chat` | Conversational interface |
-| **POST** | `/future-self/profile` | Create Identity Profile Settings |
-| **GET** | `/future-self/profile` | Retrieve Identity Profile Settings |
-| **PATCH** | `/future-self/profile` | Update Identity Profile Settings |
-| **POST** | `/future-self/daily-plan` | Daily Engine Calculations |
-| **POST** | `/tasks` | Create Task Asset |
-| **GET** | `/tasks` | List Task Assets |
-| **PATCH** | `/tasks/{task_id}/complete` | Complete Task Asset |
-| **POST** | `/memory` | Create Memory Register |
-| **GET** | `/memory/search` | Search Memory Registers |
 
 ---
 
