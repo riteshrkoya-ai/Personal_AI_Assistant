@@ -56,6 +56,9 @@ The project is designed as a backend-first platform. By decoupling the core brai
 ### Assistant Routing Concept
 The user interacts with one assistant, but internally the backend routes the request to the right module using an internal assistant router.
 +-------------------------------------------------+
+
+
+               +-------------------------------------------------+
                |              User Interface Layer               |
                | (CLI / Web UI / Desktop / Voice / WhatsApp)     |
                +-------------------------------------------------+
@@ -91,7 +94,6 @@ The user interacts with one assistant, but internally the backend routes the req
                         +-------------------------------+
 
 
----
 
 ## 🚀 V1 Scope & Features
 
