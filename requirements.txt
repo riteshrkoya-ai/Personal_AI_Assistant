@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+sqlalchemy
+asyncpg
+python-dotenv
+litellm
+apscheduler
+python-telegram-bot
+sentence-transformers
+pgvector
+pytest
+pytest-asyncio
+httpx
