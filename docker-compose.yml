@@ -13,6 +13,19 @@ services:
       - .:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  telegram-bot:
+    build: .
+    container_name: personal_assistant_telegram_bot
+    env_file:
+      - .env
+    depends_on:
+      - api
+    volumes:
+      - .:/app
+    command: python -m app.bot.telegram_polling
+    profiles:
+      - telegram
+
   postgres:
     image: pgvector/pgvector:pg15
     container_name: personal_assistant_postgres
