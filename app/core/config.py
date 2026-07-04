@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str | None = None
     authorized_telegram_chat_ids: str | None = None
+    api_base_url: str = "http://api:8000"
 
     timezone: str = "America/New_York"
 
