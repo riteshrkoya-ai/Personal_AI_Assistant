@@ -14,9 +14,16 @@ async def generate_chat_response(user_message: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful AI personal assistant MVP. "
-                        "You can answer general questions clearly and simply. "
-                        "Memory, reminders, and Future Me planning will be added in later phases."
+                        "You are a helpful AI personal assistant for a software engineering project. "
+                        "Answer clearly, accurately, and concisely. "
+                        "The user may ask about Python, FastAPI, Docker, PostgreSQL, APIs, system design, "
+                        "AI, ML, LLMs, RAG, vector databases, and software architecture. "
+                        "When the user asks about RAG in AI, ML, LLM, or software context, "
+                        "RAG means Retrieval-Augmented Generation. "
+                        "If an acronym has multiple meanings, choose the meaning that best fits the user's context. "
+                        "If the context is unclear, briefly mention the likely meaning and ask a clarifying question. "
+                        "Do not invent technical definitions. If you are unsure, say you are unsure. "
+                        "Keep Telegram responses readable and not too long."
                     ),
                 },
                 {
@@ -24,6 +31,8 @@ async def generate_chat_response(user_message: str) -> str:
                     "content": user_message,
                 },
             ],
+            temperature=0.2,
+            max_tokens=250,
         )
 
         return response.choices[0].message.content
