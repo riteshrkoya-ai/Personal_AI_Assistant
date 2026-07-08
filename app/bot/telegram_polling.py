@@ -16,9 +16,12 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+
+# Reduce noisy logs and avoid exposing Telegram API URLs/tokens in terminal output.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("telegram").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
@@ -51,6 +54,9 @@ def is_authorized(chat_id: int) -> bool:
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+
     chat_id = update.effective_chat.id if update.effective_chat else None
 
     await update.message.reply_text(
@@ -61,6 +67,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+
     chat_id = update.effective_chat.id if update.effective_chat else None
 
     await update.message.reply_text(
@@ -75,8 +84,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = update.effective_chat.id
     user_message = update.message.text
 
+    if not user_message:
+        return
+
     if not is_authorized(chat_id):
         logger.warning("Unauthorized Telegram chat_id attempted access: %s", chat_id)
+
         await update.message.reply_text(
             "You are not authorized to use this assistant yet.\n\n"
             f"Your Telegram chat ID is: {chat_id}\n"
@@ -90,8 +103,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
                 f"{settings.api_base_url}/chat",
-                json={"message": user_message},
+                json={
+                    "message": user_message,
+                    "telegram_chat_id": chat_id,
+                    "source": "telegram",
+                },
             )
+
             response.raise_for_status()
             data = response.json()
 
@@ -117,7 +135,9 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("id", id_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
+    )
 
     logger.info("Starting Telegram polling worker...")
     application.run_polling()
