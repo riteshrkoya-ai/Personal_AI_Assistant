@@ -6,6 +6,13 @@ settings = get_settings()
 
 
 async def generate_chat_response(user_message: str) -> str:
+    """
+    Generate a general assistant response using the configured Ollama model.
+
+    This is still a general chat response, not true RAG yet.
+    True RAG will come later after we add user memory, embeddings, retrieval,
+    and grounded context.
+    """
     try:
         response = await acompletion(
             model=f"ollama/{settings.ollama_model}",
@@ -35,7 +42,7 @@ async def generate_chat_response(user_message: str) -> str:
             max_tokens=250,
         )
 
-        return response.choices[0].message.content
+        return response.choices[0].message.content or "I could not generate a response."
 
     except Exception as exc:
         return (
