@@ -53,6 +53,34 @@ def is_authorized(chat_id: int) -> bool:
     return chat_id in authorized_chat_ids
 
 
+async def send_unauthorized_message(update: Update, chat_id: int) -> None:
+    if not update.message:
+        return
+
+    await update.message.reply_text(
+        "You are not authorized to use this assistant yet.\n\n"
+        f"Your Telegram chat ID is: {chat_id}\n"
+        "Add it to AUTHORIZED_TELEGRAM_CHAT_IDS in your local .env file."
+    )
+
+
+def format_memory_items(memories: list[dict]) -> str:
+    if not memories:
+        return "No personal memories found."
+
+    lines = ["Your saved memories:\n"]
+
+    for memory in memories:
+        memory_id = memory.get("id")
+        content = memory.get("content", "")
+        lines.append(f"{memory_id}. {content}")
+
+    lines.append("\nTo delete a memory, use:")
+    lines.append("/forget <memory_id>")
+
+    return "\n".join(lines)
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
@@ -62,7 +90,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.message.reply_text(
         "AI Personal Assistant bot is running.\n\n"
         f"Your Telegram chat ID is: {chat_id}\n\n"
-        "Ask the project lead to add this ID to AUTHORIZED_TELEGRAM_CHAT_IDS."
+        "Available commands:\n"
+        "/id - show your Telegram chat ID\n"
+        "/remember <text> - save a personal memory\n"
+        "/memories - list your saved memories\n"
+        "/memorysearch <query> - search your memories\n"
+        "/forget <memory_id> - delete a memory\n\n"
+        "Ask the project lead to add your ID to AUTHORIZED_TELEGRAM_CHAT_IDS."
     )
 
 
@@ -91,12 +125,7 @@ async def remember_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if not is_authorized(chat_id):
         logger.warning("Unauthorized Telegram chat_id attempted /remember: %s", chat_id)
-
-        await update.message.reply_text(
-            "You are not authorized to use this assistant yet.\n\n"
-            f"Your Telegram chat ID is: {chat_id}\n"
-            "Add it to AUTHORIZED_TELEGRAM_CHAT_IDS in your local .env file."
-        )
+        await send_unauthorized_message(update, chat_id)
         return
 
     memory_text = " ".join(context.args).strip()
@@ -121,14 +150,178 @@ async def remember_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             )
 
             response.raise_for_status()
+            data = response.json()
 
-        await update.message.reply_text("Saved this to your personal memory.")
+        memory_id = data.get("memory_id")
+
+        await update.message.reply_text(
+            f"Saved this to your personal memory.\n\nMemory ID: {memory_id}"
+        )
 
     except Exception as exc:
         logger.exception("Telegram polling worker failed while saving memory")
 
         await update.message.reply_text(
             "I could not save that memory right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+async def memories_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    List recent saved memories.
+
+    Example:
+    /memories
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /memories: %s", chat_id)
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/memory/list",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "limit": 20,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        memories = data.get("memories", [])
+        await update.message.reply_text(format_memory_items(memories))
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while listing memories")
+
+        await update.message.reply_text(
+            "I could not list your memories right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+async def memory_search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Search saved memories.
+
+    Example:
+    /memorysearch backend framework
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /memorysearch: %s", chat_id)
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    query = " ".join(context.args).strip()
+
+    if not query:
+        await update.message.reply_text(
+            "Please provide a memory search query.\n\n"
+            "Example:\n"
+            "/memorysearch backend framework"
+        )
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/memory/search",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "query": query,
+                    "top_k": 5,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        memories = data.get("memories", [])
+        await update.message.reply_text(format_memory_items(memories))
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while searching memories")
+
+        await update.message.reply_text(
+            "I could not search your memories right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Delete a saved memory by ID.
+
+    Example:
+    /forget 3
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /forget: %s", chat_id)
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Please provide the memory ID you want me to forget.\n\n"
+            "Example:\n"
+            "/forget 3"
+        )
+        return
+
+    try:
+        memory_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "Memory ID must be a number.\n\n"
+            "Example:\n"
+            "/forget 3"
+        )
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/memory/delete",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "memory_id": memory_id,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        if data.get("deleted"):
+            await update.message.reply_text(f"Deleted memory ID {memory_id}.")
+        else:
+            await update.message.reply_text(
+                f"I could not find memory ID {memory_id} for your account."
+            )
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while deleting memory")
+
+        await update.message.reply_text(
+            "I could not delete that memory right now.\n\n"
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
 
@@ -145,12 +338,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not is_authorized(chat_id):
         logger.warning("Unauthorized Telegram chat_id attempted access: %s", chat_id)
-
-        await update.message.reply_text(
-            "You are not authorized to use this assistant yet.\n\n"
-            f"Your Telegram chat ID is: {chat_id}\n"
-            "Add it to AUTHORIZED_TELEGRAM_CHAT_IDS in your local .env file."
-        )
+        await send_unauthorized_message(update, chat_id)
         return
 
     await update.message.reply_text("Thinking...")
@@ -192,6 +380,9 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CommandHandler("remember", remember_command))
+    application.add_handler(CommandHandler("memories", memories_command))
+    application.add_handler(CommandHandler("memorysearch", memory_search_command))
+    application.add_handler(CommandHandler("forget", forget_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )

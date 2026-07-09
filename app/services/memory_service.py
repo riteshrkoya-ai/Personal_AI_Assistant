@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -71,3 +71,41 @@ async def list_user_memories(
     )
 
     return list(result.scalars().all())
+
+
+async def get_user_memory_by_id(
+    session: AsyncSession,
+    user_id: int,
+    memory_id: int,
+) -> PersonalMemory | None:
+    result = await session.execute(
+        select(PersonalMemory).where(
+            PersonalMemory.id == memory_id,
+            PersonalMemory.user_id == user_id,
+        )
+    )
+
+    return result.scalar_one_or_none()
+
+
+async def delete_user_memory(
+    session: AsyncSession,
+    user_id: int,
+    memory_id: int,
+) -> bool:
+    """
+    Delete one memory only if it belongs to the current user.
+
+    Returns True if deleted, False if no matching memory was found.
+    """
+    result = await session.execute(
+        delete(PersonalMemory)
+        .where(
+            PersonalMemory.id == memory_id,
+            PersonalMemory.user_id == user_id,
+        )
+        .returning(PersonalMemory.id)
+    )
+
+    deleted_id = result.scalar_one_or_none()
+    return deleted_id is not None
