@@ -77,6 +77,62 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
 
+async def remember_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Save an explicit user-provided memory.
+
+    Example:
+    /remember My preferred backend framework is FastAPI.
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /remember: %s", chat_id)
+
+        await update.message.reply_text(
+            "You are not authorized to use this assistant yet.\n\n"
+            f"Your Telegram chat ID is: {chat_id}\n"
+            "Add it to AUTHORIZED_TELEGRAM_CHAT_IDS in your local .env file."
+        )
+        return
+
+    memory_text = " ".join(context.args).strip()
+
+    if not memory_text:
+        await update.message.reply_text(
+            "Please provide what you want me to remember.\n\n"
+            "Example:\n"
+            "/remember My preferred backend framework is FastAPI."
+        )
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/memory",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "content": memory_text,
+                    "source": "telegram",
+                },
+            )
+
+            response.raise_for_status()
+
+        await update.message.reply_text("Saved this to your personal memory.")
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while saving memory")
+
+        await update.message.reply_text(
+            "I could not save that memory right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_chat:
         return
@@ -135,6 +191,7 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("id", id_command))
+    application.add_handler(CommandHandler("remember", remember_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )

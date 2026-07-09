@@ -52,7 +52,9 @@ async def create_database_tables() -> None:
     Later, we can replace this with Alembic migrations.
     """
     from app.models.chat_message import ChatMessage  # noqa: F401
+    from app.models.personal_memory import PersonalMemory  # noqa: F401
     from app.models.user import User  # noqa: F401
 
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
