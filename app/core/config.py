@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     authorized_telegram_chat_ids: str | None = None
     api_base_url: str = "http://api:8000"
 
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_dimension: int = 384
+    memory_search_top_k: int = 5
+
     timezone: str = "America/New_York"
 
     model_config = SettingsConfigDict(

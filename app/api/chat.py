@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from app.core.database import AsyncSessionLocal
 from app.services.chat_history_service import save_chat_message
 from app.services.llm_client import generate_chat_response
+from app.services.memory_service import search_user_memories
 from app.services.user_service import get_or_create_telegram_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -24,6 +25,7 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     user_id: int | None = None
+    memory_texts: list[str] = []
 
     async with AsyncSessionLocal() as session:
         if request.telegram_chat_id is not None:
@@ -42,9 +44,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 source=request.source,
             )
 
+            relevant_memories = await search_user_memories(
+                session=session,
+                user_id=user.id,
+                query=request.message,
+            )
+
+            memory_texts = [memory.content for memory in relevant_memories]
+
             await session.commit()
 
-    assistant_response = await generate_chat_response(request.message)
+    assistant_response = await generate_chat_response(
+        user_message=request.message,
+        memories=memory_texts,
+    )
 
     if user_id is not None:
         async with AsyncSessionLocal() as session:
