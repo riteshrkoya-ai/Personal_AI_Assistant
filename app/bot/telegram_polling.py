@@ -1,5 +1,7 @@
+import time
 import logging
-
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import httpx
 from telegram import Update
 from telegram.ext import (
@@ -11,6 +13,7 @@ from telegram.ext import (
 )
 
 from app.core.config import get_settings
+
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -81,6 +84,69 @@ def format_memory_items(memories: list[dict]) -> str:
     return "\n".join(lines)
 
 
+
+def parse_reminder_args(args: list[str]) -> tuple[datetime, str] | None:
+    """
+    Parse reminder command args.
+
+    Expected format:
+    /remind 2026-07-09 20:00 Study FastAPI
+    """
+    if len(args) < 3:
+        return None
+
+    date_part = args[0]
+    time_part = args[1]
+    message = " ".join(args[2:]).strip()
+
+    if not message:
+        return None
+
+    try:
+        scheduled_naive = datetime.strptime(
+            f"{date_part} {time_part}",
+            "%Y-%m-%d %H:%M",
+        )
+    except ValueError:
+        return None
+
+    timezone = ZoneInfo(settings.timezone)
+    scheduled_time = scheduled_naive.replace(tzinfo=timezone)
+
+    return scheduled_time, message
+
+
+def format_reminder_datetime(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value)
+        local_dt = parsed.astimezone(ZoneInfo(settings.timezone))
+        return local_dt.strftime("%Y-%m-%d %I:%M %p")
+    except Exception:
+        return value
+
+
+def format_reminder_items(reminders: list[dict]) -> str:
+    if not reminders:
+        return "No pending reminders found."
+
+    lines = ["Your pending reminders:\n"]
+
+    for reminder in reminders:
+        reminder_id = reminder.get("id")
+        message = reminder.get("message", "")
+        scheduled_time = format_reminder_datetime(
+            reminder.get("scheduled_time", "")
+        )
+
+        lines.append(f"{reminder_id}. {scheduled_time} — {message}")
+
+    lines.append("\nTo cancel a reminder, use:")
+    lines.append("/cancelreminder <reminder_id>")
+
+    return "\n".join(lines)
+
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
@@ -96,6 +162,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/memories - list your saved memories\n"
         "/memorysearch <query> - search your memories\n"
         "/forget <memory_id> - delete a memory\n\n"
+        "/forget <memory_id> - delete a memory\n"
+        "/remind YYYY-MM-DD HH:MM <message> - create a reminder\n"
+        "/reminders - list pending reminders\n"
+        "/cancelreminder <reminder_id> - cancel a reminder\n\n"
+origin/develop
         "Ask the project lead to add your ID to AUTHORIZED_TELEGRAM_CHAT_IDS."
     )
 
@@ -326,6 +397,181 @@ async def forget_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
 
+async def remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Create a reminder.
+
+    Example:
+    /remind 2026-07-09 20:00 Study FastAPI
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /remind: %s", chat_id)
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    parsed = parse_reminder_args(context.args)
+
+    if not parsed:
+        await update.message.reply_text(
+            "Please use this format:\n\n"
+            "/remind YYYY-MM-DD HH:MM reminder message\n\n"
+            "Example:\n"
+            "/remind 2026-07-09 20:00 Study FastAPI"
+        )
+        return
+
+    scheduled_time, message = parsed
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/reminders",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "message": message,
+                    "scheduled_time": scheduled_time.isoformat(),
+                    "source": "telegram",
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        reminder_id = data.get("reminder_id")
+        scheduled_display = format_reminder_datetime(data.get("scheduled_time", ""))
+
+        await update.message.reply_text(
+            "Reminder created.\n\n"
+            f"Reminder ID: {reminder_id}\n"
+            f"When: {scheduled_display}\n"
+            f"Message: {message}"
+        )
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while creating reminder")
+
+        await update.message.reply_text(
+            "I could not create that reminder right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    List pending reminders.
+
+    Example:
+    /reminders
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning("Unauthorized Telegram chat_id attempted /reminders: %s", chat_id)
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/reminders/list",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "status": "pending",
+                    "limit": 20,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        reminders = data.get("reminders", [])
+        await update.message.reply_text(format_reminder_items(reminders))
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while listing reminders")
+
+        await update.message.reply_text(
+            "I could not list your reminders right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Cancel a reminder by ID.
+
+    Example:
+    /cancelreminder 3
+    """
+    if not update.message or not update.effective_chat:
+        return
+
+    chat_id = update.effective_chat.id
+
+    if not is_authorized(chat_id):
+        logger.warning(
+            "Unauthorized Telegram chat_id attempted /cancelreminder: %s",
+            chat_id,
+        )
+        await send_unauthorized_message(update, chat_id)
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "Please provide the reminder ID you want to cancel.\n\n"
+            "Example:\n"
+            "/cancelreminder 3"
+        )
+        return
+
+    try:
+        reminder_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "Reminder ID must be a number.\n\n"
+            "Example:\n"
+            "/cancelreminder 3"
+        )
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{settings.api_base_url}/reminders/cancel",
+                json={
+                    "telegram_chat_id": chat_id,
+                    "reminder_id": reminder_id,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        if data.get("cancelled"):
+            await update.message.reply_text(f"Cancelled reminder ID {reminder_id}.")
+        else:
+            await update.message.reply_text(
+                f"I could not find a pending reminder with ID {reminder_id}."
+            )
+
+    except Exception as exc:
+        logger.exception("Telegram polling worker failed while cancelling reminder")
+
+        await update.message.reply_text(
+            "I could not cancel that reminder right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}"
+        )
+
+
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_chat:
         return
@@ -367,7 +613,30 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "I could not reach the assistant backend right now.\n\n"
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
+def wait_for_backend(max_attempts: int = 30, delay_seconds: int = 2) -> None:
+    """
+    Wait until the FastAPI backend is ready before Telegram polling starts.
+    """
+    health_url = f"{settings.api_base_url}/health"
 
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = httpx.get(health_url, timeout=5.0)
+
+            if response.status_code == 200:
+                logger.info("Assistant backend is ready.")
+                return
+
+        except Exception:
+            logger.info(
+                "Waiting for assistant backend... attempt %s/%s",
+                attempt,
+                max_attempts,
+            )
+
+        time.sleep(delay_seconds)
+
+    raise RuntimeError("Assistant backend was not ready after waiting.")
 
 def main() -> None:
     if not settings.telegram_bot_token:
@@ -375,20 +644,33 @@ def main() -> None:
             "TELEGRAM_BOT_TOKEN is missing. Add it to your .env file."
         )
 
+    wait_for_backend()
+
     application = Application.builder().token(settings.telegram_bot_token).build()
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("id", id_command))
+
+    # Memory commands
     application.add_handler(CommandHandler("remember", remember_command))
     application.add_handler(CommandHandler("memories", memories_command))
     application.add_handler(CommandHandler("memorysearch", memory_search_command))
     application.add_handler(CommandHandler("forget", forget_command))
+
+
+    # Reminder commands
+    application.add_handler(CommandHandler("remind", remind_command))
+    application.add_handler(CommandHandler("reminders", reminders_command))
+    application.add_handler(CommandHandler("cancelreminder", cancel_reminder_command))
+
+    # General chat
+
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
 
     logger.info("Starting Telegram polling worker...")
-    application.run_polling()
+    application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
