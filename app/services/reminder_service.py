@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reminder import Reminder
-
+from app.models.user import User
 
 async def create_reminder(
     session: AsyncSession,
@@ -87,6 +87,54 @@ async def cancel_user_reminder(
         return False
 
     reminder.status = "cancelled"
+    await session.flush()
+
+    return True
+
+async def list_due_reminders(
+    session: AsyncSession,
+    now: datetime,
+    limit: int = 20,
+) -> list[tuple[Reminder, int]]:
+    """
+    Return pending reminders that are due.
+
+    Returns each reminder with the user's Telegram chat ID so the bot can send it.
+    """
+    result = await session.execute(
+        select(Reminder, User.telegram_chat_id)
+        .join(User, User.id == Reminder.user_id)
+        .where(
+            Reminder.status == "pending",
+            Reminder.scheduled_time <= now,
+            User.telegram_chat_id.is_not(None),
+        )
+        .order_by(Reminder.scheduled_time.asc())
+        .limit(limit)
+    )
+
+    return [(row[0], row[1]) for row in result.all()]
+
+
+async def mark_reminder_sent(
+    session: AsyncSession,
+    reminder_id: int,
+    sent_at: datetime,
+) -> bool:
+    result = await session.execute(
+        select(Reminder).where(
+            Reminder.id == reminder_id,
+            Reminder.status == "pending",
+        )
+    )
+
+    reminder = result.scalar_one_or_none()
+
+    if not reminder:
+        return False
+
+    reminder.status = "sent"
+    reminder.sent_at = sent_at
     await session.flush()
 
     return True
