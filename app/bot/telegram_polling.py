@@ -84,6 +84,7 @@ def format_memory_items(memories: list[dict]) -> str:
     return "\n".join(lines)
 
 
+
 def parse_reminder_args(args: list[str]) -> tuple[datetime, str] | None:
     """
     Parse reminder command args.
@@ -145,6 +146,7 @@ def format_reminder_items(reminders: list[dict]) -> str:
     return "\n".join(lines)
 
 
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
@@ -159,10 +161,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/remember <text> - save a personal memory\n"
         "/memories - list your saved memories\n"
         "/memorysearch <query> - search your memories\n"
+        "/forget <memory_id> - delete a memory\n\n"
         "/forget <memory_id> - delete a memory\n"
         "/remind YYYY-MM-DD HH:MM <message> - create a reminder\n"
         "/reminders - list pending reminders\n"
         "/cancelreminder <reminder_id> - cancel a reminder\n\n"
+origin/develop
         "Ask the project lead to add your ID to AUTHORIZED_TELEGRAM_CHAT_IDS."
     )
 
@@ -567,6 +571,7 @@ async def cancel_reminder_command(update: Update, context: ContextTypes.DEFAULT_
         )
 
 
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_chat:
         return
@@ -652,12 +657,14 @@ def main() -> None:
     application.add_handler(CommandHandler("memorysearch", memory_search_command))
     application.add_handler(CommandHandler("forget", forget_command))
 
+
     # Reminder commands
     application.add_handler(CommandHandler("remind", remind_command))
     application.add_handler(CommandHandler("reminders", reminders_command))
     application.add_handler(CommandHandler("cancelreminder", cancel_reminder_command))
 
     # General chat
+
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )

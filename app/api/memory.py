@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from app.core.database import AsyncSessionLocal
 from app.services.memory_service import (
     create_memory,
+    delete_user_memory,
     list_user_memories,
     search_user_memories,
 )
@@ -31,20 +32,32 @@ class MemorySearchRequest(BaseModel):
     top_k: int = 5
 
 
+class MemoryListRequest(BaseModel):
+    telegram_chat_id: int
+    limit: int = 20
+
+
+class MemoryDeleteRequest(BaseModel):
+    telegram_chat_id: int
+    memory_id: int
+
+
 class MemoryItem(BaseModel):
     id: int
     content: str
     source: str
 
 
-class MemorySearchResponse(BaseModel):
+class MemoryListResponse(BaseModel):
     user_id: int
     memories: list[MemoryItem]
 
 
-class MemoryListRequest(BaseModel):
-    telegram_chat_id: int
-    limit: int = 20
+class MemoryDeleteResponse(BaseModel):
+    user_id: int
+    memory_id: int
+    deleted: bool
+    message: str
 
 
 @router.post("", response_model=MemoryCreateResponse)
@@ -75,8 +88,8 @@ async def save_memory(request: MemoryCreateRequest) -> MemoryCreateResponse:
         )
 
 
-@router.post("/search", response_model=MemorySearchResponse)
-async def search_memory(request: MemorySearchRequest) -> MemorySearchResponse:
+@router.post("/search", response_model=MemoryListResponse)
+async def search_memory(request: MemorySearchRequest) -> MemoryListResponse:
     async with AsyncSessionLocal() as session:
         user = await get_or_create_telegram_user(
             session=session,
@@ -90,7 +103,7 @@ async def search_memory(request: MemorySearchRequest) -> MemorySearchResponse:
             top_k=request.top_k,
         )
 
-        return MemorySearchResponse(
+        return MemoryListResponse(
             user_id=user.id,
             memories=[
                 MemoryItem(
@@ -103,8 +116,8 @@ async def search_memory(request: MemorySearchRequest) -> MemorySearchResponse:
         )
 
 
-@router.post("/list", response_model=MemorySearchResponse)
-async def list_memories(request: MemoryListRequest) -> MemorySearchResponse:
+@router.post("/list", response_model=MemoryListResponse)
+async def list_memories(request: MemoryListRequest) -> MemoryListResponse:
     async with AsyncSessionLocal() as session:
         user = await get_or_create_telegram_user(
             session=session,
@@ -117,7 +130,7 @@ async def list_memories(request: MemoryListRequest) -> MemorySearchResponse:
             limit=request.limit,
         )
 
-        return MemorySearchResponse(
+        return MemoryListResponse(
             user_id=user.id,
             memories=[
                 MemoryItem(
@@ -127,4 +140,36 @@ async def list_memories(request: MemoryListRequest) -> MemorySearchResponse:
                 )
                 for memory in memories
             ],
+        )
+
+
+@router.post("/delete", response_model=MemoryDeleteResponse)
+async def delete_memory(request: MemoryDeleteRequest) -> MemoryDeleteResponse:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_telegram_user(
+            session=session,
+            telegram_chat_id=request.telegram_chat_id,
+        )
+
+        deleted = await delete_user_memory(
+            session=session,
+            user_id=user.id,
+            memory_id=request.memory_id,
+        )
+
+        await session.commit()
+
+        if not deleted:
+            return MemoryDeleteResponse(
+                user_id=user.id,
+                memory_id=request.memory_id,
+                deleted=False,
+                message="No matching memory was found for this user.",
+            )
+
+        return MemoryDeleteResponse(
+            user_id=user.id,
+            memory_id=request.memory_id,
+            deleted=True,
+            message="Memory deleted successfully.",
         )
