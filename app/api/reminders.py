@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -7,7 +7,9 @@ from app.core.database import AsyncSessionLocal
 from app.services.reminder_service import (
     cancel_user_reminder,
     create_reminder,
+    list_due_reminders,
     list_user_reminders,
+    mark_reminder_sent,
 )
 from app.services.user_service import get_or_create_telegram_user
 
@@ -59,6 +61,28 @@ class ReminderCancelResponse(BaseModel):
     cancelled: bool
     message: str
 
+class DueReminderItem(BaseModel):
+    id: int
+    telegram_chat_id: int
+    message: str
+    scheduled_time: datetime
+
+
+class DueReminderListRequest(BaseModel):
+    limit: int = 20
+
+
+class DueReminderListResponse(BaseModel):
+    reminders: list[DueReminderItem]
+
+
+class ReminderMarkSentRequest(BaseModel):
+    reminder_id: int
+
+
+class ReminderMarkSentResponse(BaseModel):
+    reminder_id: int
+    marked_sent: bool
 
 @router.post("", response_model=ReminderCreateResponse)
 async def save_reminder(request: ReminderCreateRequest) -> ReminderCreateResponse:
@@ -149,4 +173,48 @@ async def cancel_reminder(request: ReminderCancelRequest) -> ReminderCancelRespo
             reminder_id=request.reminder_id,
             cancelled=True,
             message="Reminder cancelled successfully.",
+        )
+    
+@router.post("/due", response_model=DueReminderListResponse)
+async def get_due_reminders(
+    request: DueReminderListRequest,
+) -> DueReminderListResponse:
+    async with AsyncSessionLocal() as session:
+        now = datetime.now(timezone.utc)
+
+        due_reminders = await list_due_reminders(
+            session=session,
+            now=now,
+            limit=request.limit,
+        )
+
+        return DueReminderListResponse(
+            reminders=[
+                DueReminderItem(
+                    id=reminder.id,
+                    telegram_chat_id=telegram_chat_id,
+                    message=reminder.message,
+                    scheduled_time=reminder.scheduled_time,
+                )
+                for reminder, telegram_chat_id in due_reminders
+            ],
+        )
+
+
+@router.post("/mark-sent", response_model=ReminderMarkSentResponse)
+async def mark_sent(
+    request: ReminderMarkSentRequest,
+) -> ReminderMarkSentResponse:
+    async with AsyncSessionLocal() as session:
+        marked_sent = await mark_reminder_sent(
+            session=session,
+            reminder_id=request.reminder_id,
+            sent_at=datetime.now(timezone.utc),
+        )
+
+        await session.commit()
+
+        return ReminderMarkSentResponse(
+            reminder_id=request.reminder_id,
+            marked_sent=marked_sent,
         )

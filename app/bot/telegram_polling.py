@@ -190,8 +190,20 @@ def reminder_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 def reminder_time_keyboard() -> InlineKeyboardMarkup:
+    """
+    Button-based reminder time selection.
+    Normal users should not need to type date/time.
+    """
     return InlineKeyboardMarkup(
         [
+            [
+                InlineKeyboardButton("In 15 min", callback_data="reminder_time:in_15"),
+                InlineKeyboardButton("In 30 min", callback_data="reminder_time:in_30"),
+            ],
+            [
+                InlineKeyboardButton("In 1 hour", callback_data="reminder_time:in_60"),
+                InlineKeyboardButton("In 2 hours", callback_data="reminder_time:in_120"),
+            ],
             [
                 InlineKeyboardButton("Today 8 PM", callback_data="reminder_time:today_20"),
             ],
@@ -200,7 +212,68 @@ def reminder_time_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Tomorrow 8 PM", callback_data="reminder_time:tomorrow_20"),
             ],
             [
-                InlineKeyboardButton("Custom Time", callback_data="reminder_time:custom"),
+                InlineKeyboardButton("Pick Date/Time", callback_data="reminder_time:pick"),
+                InlineKeyboardButton("Cancel", callback_data="flow:cancel"),
+            ],
+        ]
+    )
+
+
+def reminder_day_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Today", callback_data="reminder_day:today"),
+                InlineKeyboardButton("Tomorrow", callback_data="reminder_day:tomorrow"),
+            ],
+            [
+                InlineKeyboardButton("In 2 days", callback_data="reminder_day:in_2_days"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="reminder:back_to_time"),
+                InlineKeyboardButton("Cancel", callback_data="flow:cancel"),
+            ],
+        ]
+    )
+
+
+def reminder_hour_keyboard() -> InlineKeyboardMarkup:
+    rows = []
+
+    hours = list(range(8, 23))
+    for i in range(0, len(hours), 3):
+        row = [
+            InlineKeyboardButton(
+                f"{hour:02d}:00",
+                callback_data=f"reminder_hour:{hour}",
+            )
+            for hour in hours[i:i + 3]
+        ]
+        rows.append(row)
+
+    rows.append(
+        [
+            InlineKeyboardButton("Back", callback_data="reminder_time:pick"),
+            InlineKeyboardButton("Cancel", callback_data="flow:cancel"),
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def reminder_minute_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(":00", callback_data="reminder_minute:00"),
+                InlineKeyboardButton(":15", callback_data="reminder_minute:15"),
+            ],
+            [
+                InlineKeyboardButton(":30", callback_data="reminder_minute:30"),
+                InlineKeyboardButton(":45", callback_data="reminder_minute:45"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="reminder_day:back_to_hour"),
                 InlineKeyboardButton("Cancel", callback_data="flow:cancel"),
             ],
         ]
@@ -307,7 +380,7 @@ def format_memory_items(memories: list[dict]) -> str:
 
 def parse_reminder_args(args: list[str]) -> tuple[datetime, str] | None:
     """
-    Parse direct reminder command args.
+    Parse direct reminder command args for developer/power-user shortcut.
 
     Expected format:
     /remind 2026-07-09 20:00 Study FastAPI
@@ -336,26 +409,21 @@ def parse_reminder_args(args: list[str]) -> tuple[datetime, str] | None:
     return scheduled_time, message
 
 
-def parse_custom_reminder_time(text: str) -> datetime | None:
-    """
-    Expected format:
-    2026-07-10 20:00
-    """
-    try:
-        scheduled_naive = datetime.strptime(
-            text.strip(),
-            "%Y-%m-%d %H:%M",
-        )
-    except ValueError:
-        return None
-
-    timezone = ZoneInfo(settings.timezone)
-    return scheduled_naive.replace(tzinfo=timezone)
-
-
 def get_quick_reminder_time(option: str) -> datetime | None:
     timezone = ZoneInfo(settings.timezone)
     now = datetime.now(timezone)
+
+    if option == "in_15":
+        return now + timedelta(minutes=15)
+
+    if option == "in_30":
+        return now + timedelta(minutes=30)
+
+    if option == "in_60":
+        return now + timedelta(hours=1)
+
+    if option == "in_120":
+        return now + timedelta(hours=2)
 
     if option == "today_20":
         scheduled = now.replace(hour=20, minute=0, second=0, microsecond=0)
@@ -370,6 +438,22 @@ def get_quick_reminder_time(option: str) -> datetime | None:
     if option == "tomorrow_20":
         tomorrow = now + timedelta(days=1)
         return tomorrow.replace(hour=20, minute=0, second=0, microsecond=0)
+
+    return None
+
+
+def get_selected_reminder_day(option: str) -> datetime | None:
+    timezone = ZoneInfo(settings.timezone)
+    now = datetime.now(timezone)
+
+    if option == "today":
+        return now
+
+    if option == "tomorrow":
+        return now + timedelta(days=1)
+
+    if option == "in_2_days":
+        return now + timedelta(days=2)
 
     return None
 
@@ -409,6 +493,8 @@ def format_reminder_items(reminders: list[dict]) -> str:
 def clear_active_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data.pop("active_flow", None)
     context.user_data.pop("pending_reminder_message", None)
+    context.user_data.pop("pending_reminder_day", None)
+    context.user_data.pop("pending_reminder_hour", None)
 
 
 # -----------------------------
@@ -1011,6 +1097,14 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
+    if data == "reminder:back_to_time":
+        context.user_data["active_flow"] = "reminder_time"
+        await query.edit_message_text(
+            "When should I remind you?",
+            reply_markup=reminder_time_keyboard(),
+        )
+        return
+
     if data == "reminder:list":
         reminders = await list_reminders_api(chat_id)
         await query.edit_message_text(
@@ -1054,14 +1148,11 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if data.startswith("reminder_time:"):
         option = data.split(":", 1)[1]
 
-        if option == "custom":
-            context.user_data["active_flow"] = "reminder_custom_time"
+        if option == "pick":
+            context.user_data["active_flow"] = "reminder_pick_day"
             await query.edit_message_text(
-                "Please type the reminder date and time like this:\n\n"
-                "2026-07-10 20:00",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Cancel", callback_data="flow:cancel")]]
-                ),
+                "Choose the reminder day:",
+                reply_markup=reminder_day_keyboard(),
             )
             return
 
@@ -1073,6 +1164,121 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text(
                 "I could not create the reminder because the reminder details were missing.",
                 reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        reminder = await create_reminder_api(chat_id, message, scheduled_time)
+        scheduled_display = format_reminder_datetime(reminder.get("scheduled_time", ""))
+
+        clear_active_flow(context)
+
+        await query.edit_message_text(
+            "Reminder created.\n\n"
+            f"When: {scheduled_display}\n"
+            f"Message: {message}",
+            reply_markup=back_to_reminders_keyboard(),
+        )
+        return
+
+    if data.startswith("reminder_day:"):
+        option = data.split(":", 1)[1]
+
+        if option == "back_to_hour":
+            context.user_data["active_flow"] = "reminder_pick_hour"
+            await query.edit_message_text(
+                "Choose the reminder hour:",
+                reply_markup=reminder_hour_keyboard(),
+            )
+            return
+
+        selected_day = get_selected_reminder_day(option)
+
+        if not selected_day:
+            await query.edit_message_text(
+                "I could not understand that day selection.",
+                reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        context.user_data["pending_reminder_day"] = selected_day.isoformat()
+        context.user_data["active_flow"] = "reminder_pick_hour"
+
+        await query.edit_message_text(
+            "Choose the reminder hour:",
+            reply_markup=reminder_hour_keyboard(),
+        )
+        return
+
+    if data.startswith("reminder_hour:"):
+        hour_text = data.split(":", 1)[1]
+
+        try:
+            hour = int(hour_text)
+        except ValueError:
+            await query.edit_message_text(
+                "I could not understand that hour selection.",
+                reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        context.user_data["pending_reminder_hour"] = hour
+        context.user_data["active_flow"] = "reminder_pick_minute"
+
+        await query.edit_message_text(
+            "Choose the reminder minutes:",
+            reply_markup=reminder_minute_keyboard(),
+        )
+        return
+
+    if data.startswith("reminder_minute:"):
+        minute_text = data.split(":", 1)[1]
+
+        try:
+            minute = int(minute_text)
+        except ValueError:
+            await query.edit_message_text(
+                "I could not understand that minute selection.",
+                reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        day_raw = context.user_data.get("pending_reminder_day")
+        hour = context.user_data.get("pending_reminder_hour")
+        message = context.user_data.get("pending_reminder_message")
+
+        if not day_raw or hour is None or not message:
+            clear_active_flow(context)
+            await query.edit_message_text(
+                "I could not create the reminder because the reminder details were missing.",
+                reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        try:
+            selected_day = datetime.fromisoformat(day_raw)
+        except ValueError:
+            clear_active_flow(context)
+            await query.edit_message_text(
+                "I could not create the reminder because the selected day was invalid.",
+                reply_markup=back_to_reminders_keyboard(),
+            )
+            return
+
+        scheduled_time = selected_day.replace(
+            hour=hour,
+            minute=minute,
+            second=0,
+            microsecond=0,
+        )
+
+        timezone = ZoneInfo(settings.timezone)
+        now = datetime.now(timezone)
+
+        if scheduled_time <= now:
+            context.user_data["active_flow"] = "reminder_pick_day"
+            await query.edit_message_text(
+                "That time has already passed. Please choose another day and time.",
+                reply_markup=reminder_day_keyboard(),
             )
             return
 
@@ -1167,49 +1373,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    if active_flow == "reminder_custom_time":
-        scheduled_time = parse_custom_reminder_time(user_message)
-        message = context.user_data.get("pending_reminder_message")
-
-        if not scheduled_time:
-            await update.message.reply_text(
-                "Please use this date/time format:\n\n"
-                "2026-07-10 20:00",
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Cancel", callback_data="flow:cancel")]]
-                ),
-            )
-            return
-
-        if not message:
-            clear_active_flow(context)
-            await update.message.reply_text(
-                "I could not create the reminder because the reminder message was missing.",
-                reply_markup=back_to_reminders_keyboard(),
-            )
-            return
-
-        try:
-            reminder = await create_reminder_api(chat_id, message, scheduled_time)
-            scheduled_display = format_reminder_datetime(reminder.get("scheduled_time", ""))
-
-            clear_active_flow(context)
-
-            await update.message.reply_text(
-                "Reminder created.\n\n"
-                f"When: {scheduled_display}\n"
-                f"Message: {message}",
-                reply_markup=back_to_reminders_keyboard(),
-            )
-
-        except Exception as exc:
-            logger.exception("Guided reminder creation failed")
-            await update.message.reply_text(
-                "I could not create that reminder right now.\n\n"
-                f"Technical detail: {type(exc).__name__}: {exc}"
-            )
-        return
-
     await update.message.reply_text("Thinking...")
 
     try:
@@ -1232,6 +1395,56 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             "I could not reach the assistant backend right now.\n\n"
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
+
+
+# -----------------------------
+# Reminder scheduler job
+# -----------------------------
+
+async def send_due_reminders_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Periodically check the backend for due reminders and send them through Telegram.
+    """
+    try:
+        data = await post_to_backend(
+            "/reminders/due",
+            {
+                "limit": 20,
+            },
+            timeout=30.0,
+        )
+
+        due_reminders = data.get("reminders", [])
+
+        for reminder in due_reminders:
+            reminder_id = reminder.get("id")
+            telegram_chat_id = reminder.get("telegram_chat_id")
+            message = reminder.get("message", "")
+
+            if not reminder_id or not telegram_chat_id or not message:
+                continue
+
+            try:
+                await context.bot.send_message(
+                    chat_id=telegram_chat_id,
+                    text=f"Reminder:\n\n{message}",
+                )
+
+                await post_to_backend(
+                    "/reminders/mark-sent",
+                    {
+                        "reminder_id": reminder_id,
+                    },
+                    timeout=30.0,
+                )
+
+                logger.info("Sent reminder ID %s", reminder_id)
+
+            except Exception:
+                logger.exception("Failed to send reminder ID %s", reminder_id)
+
+    except Exception:
+        logger.exception("Reminder scheduler failed while checking due reminders")
 
 
 # -----------------------------
@@ -1272,6 +1485,17 @@ def main() -> None:
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
+
+    if application.job_queue:
+        application.job_queue.run_repeating(
+            send_due_reminders_job,
+            interval=30,
+            first=10,
+            name="send_due_reminders",
+        )
+        logger.info("Reminder scheduler job registered.")
+    else:
+        logger.warning("Telegram job queue is not available. Reminder scheduler disabled.")
 
     logger.info("Starting Telegram polling worker...")
     application.run_polling(drop_pending_updates=True)
