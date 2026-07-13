@@ -171,3 +171,19 @@ async def cancel_study_plan_api(chat_id: int, study_plan_id: int) -> bool:
         },
     )
     return bool(data.get("cancelled"))
+
+async def create_study_plan_reminders_api(
+    chat_id: int,
+    study_plan_id: int,
+    hour: int,
+    minute: int = 0,
+) -> dict:
+    return await post_to_backend(
+        "/study/plans/reminders",
+        {
+            "telegram_chat_id": chat_id,
+            "study_plan_id": study_plan_id,
+            "hour": hour,
+            "minute": minute,
+        },
+    )

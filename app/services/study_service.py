@@ -1,4 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from app.models.reminder import Reminder
+from app.services.reminder_service import create_reminder
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,7 +199,122 @@ async def cancel_study_plan(
 
     for task in pending_tasks:
         task.status = "cancelled"
+        reminders_result = await session.execute(
+        select(Reminder).where(
+            Reminder.user_id == user_id,
+            Reminder.source == f"study_plan:{study_plan_id}",
+            Reminder.status == "pending",
+        )
+    )
+
+    pending_reminders = list(reminders_result.scalars().all())
+
+    for reminder in pending_reminders:
+        reminder.status = "cancelled"
 
     await session.flush()
 
     return True
+
+def build_study_reminder_time(
+    day_number: int,
+    hour: int,
+    minute: int,
+    timezone_name: str,
+) -> datetime:
+    timezone_obj = ZoneInfo(timezone_name)
+    now = datetime.now(timezone_obj)
+
+    first_reminder_date = now.date()
+
+    first_reminder_time = datetime(
+        year=now.year,
+        month=now.month,
+        day=now.day,
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0,
+        tzinfo=timezone_obj,
+    )
+
+    if first_reminder_time <= now:
+        first_reminder_date = first_reminder_date + timedelta(days=1)
+
+    reminder_date = first_reminder_date + timedelta(days=day_number - 1)
+
+    return datetime(
+        year=reminder_date.year,
+        month=reminder_date.month,
+        day=reminder_date.day,
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0,
+        tzinfo=timezone_obj,
+    )
+
+
+async def create_study_plan_reminders(
+    session: AsyncSession,
+    user_id: int,
+    study_plan_id: int,
+    hour: int,
+    minute: int,
+    timezone_name: str,
+) -> list[Reminder]:
+    if hour < 0 or hour > 23:
+        raise ValueError("Hour must be between 0 and 23.")
+
+    if minute < 0 or minute > 59:
+        raise ValueError("Minute must be between 0 and 59.")
+
+    plan_result = await session.execute(
+        select(StudyPlan).where(
+            StudyPlan.id == study_plan_id,
+            StudyPlan.user_id == user_id,
+            StudyPlan.status == "active",
+        )
+    )
+
+    study_plan = plan_result.scalar_one_or_none()
+
+    if not study_plan:
+        return []
+
+    tasks_result = await session.execute(
+        select(StudyTask).where(
+            StudyTask.study_plan_id == study_plan_id,
+            StudyTask.user_id == user_id,
+            StudyTask.status == "pending",
+        )
+        .order_by(StudyTask.day_number.asc())
+    )
+
+    pending_tasks = list(tasks_result.scalars().all())
+
+    created_reminders: list[Reminder] = []
+
+    for task in pending_tasks:
+        scheduled_time = build_study_reminder_time(
+            day_number=task.day_number,
+            hour=hour,
+            minute=minute,
+            timezone_name=timezone_name,
+        )
+
+        reminder_message = f"Study Day {task.day_number}: {task.title}"
+
+        reminder = await create_reminder(
+            session=session,
+            user_id=user_id,
+            message=reminder_message,
+            scheduled_time=scheduled_time,
+            source=f"study_plan:{study_plan_id}",
+        )
+
+        created_reminders.append(reminder)
+
+    await session.flush()
+
+    return created_reminders

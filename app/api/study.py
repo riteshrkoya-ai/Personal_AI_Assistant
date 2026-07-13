@@ -8,13 +8,16 @@ from app.services.study_service import (
     cancel_study_plan,
     complete_study_task,
     create_study_plan,
+    create_study_plan_reminders,
     list_user_study_plans,
     list_user_study_tasks,
 )
 from app.services.user_service import get_or_create_telegram_user
 
-router = APIRouter(prefix="/study", tags=["study"])
+from app.core.config import get_settings
 
+router = APIRouter(prefix="/study", tags=["study"])
+settings = get_settings()
 
 class StudyTaskItem(BaseModel):
     id: int
@@ -92,6 +95,20 @@ class StudyPlanCancelResponse(BaseModel):
     user_id: int
     study_plan_id: int
     cancelled: bool
+    message: str
+
+class StudyPlanRemindersCreateRequest(BaseModel):
+    telegram_chat_id: int
+    study_plan_id: int
+    hour: int = 20
+    minute: int = 0
+
+
+class StudyPlanRemindersCreateResponse(BaseModel):
+    user_id: int
+    study_plan_id: int
+    created: bool
+    reminder_count: int
     message: str
 
 def to_study_plan_item(study_plan) -> StudyPlanItem:
@@ -259,4 +276,45 @@ async def cancel_plan(
             study_plan_id=request.study_plan_id,
             cancelled=False,
             message="No active study plan was found for this user.",
+        )
+
+@router.post("/plans/reminders", response_model=StudyPlanRemindersCreateResponse)
+async def create_plan_reminders(
+    request: StudyPlanRemindersCreateRequest,
+) -> StudyPlanRemindersCreateResponse:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_telegram_user(
+            session=session,
+            telegram_chat_id=request.telegram_chat_id,
+        )
+
+        try:
+            reminders = await create_study_plan_reminders(
+                session=session,
+                user_id=user.id,
+                study_plan_id=request.study_plan_id,
+                hour=request.hour,
+                minute=request.minute,
+                timezone_name=settings.timezone,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        await session.commit()
+
+        if reminders:
+            return StudyPlanRemindersCreateResponse(
+                user_id=user.id,
+                study_plan_id=request.study_plan_id,
+                created=True,
+                reminder_count=len(reminders),
+                message="Study reminders created.",
+            )
+
+        return StudyPlanRemindersCreateResponse(
+            user_id=user.id,
+            study_plan_id=request.study_plan_id,
+            created=False,
+            reminder_count=0,
+            message="No active study plan with pending tasks was found.",
         )
