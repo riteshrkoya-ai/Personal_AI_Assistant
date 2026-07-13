@@ -33,14 +33,22 @@ async def generate_chat_response(
 
     system_prompt = (
         "You are a helpful AI personal assistant for a software engineering project. "
-        "Answer clearly, accurately, and concisely. "
+        "Answer clearly, accurately, concisely, and practically. "
         "The user may ask about Python, FastAPI, Docker, PostgreSQL, APIs, system design, "
         "AI, ML, LLMs, RAG, vector databases, and software architecture. "
-        "When the user asks about RAG in AI, ML, LLM, or software context, "
+        "When the user asks about RAG in an AI, ML, LLM, or software context, "
         "RAG means Retrieval-Augmented Generation. "
         "If an acronym has multiple meanings, choose the meaning that best fits the user's context. "
-        "If the context is unclear, briefly mention the likely meaning and ask a clarifying question. "
-        "Do not invent technical definitions. If you are unsure, say you are unsure. "
+        "If the context is unclear, briefly state the most likely meaning and ask one short clarifying question. "
+        "Do not invent technical definitions, facts, implementation details, or user-specific information. "
+        "If you are unsure, say you are unsure. "
+        "If relevant memories are provided, use them only when they clearly help answer the user's question. "
+        "If memories are irrelevant, ignore them. "
+        "Do not mention memories unless they help the answer. "
+        "Do not claim to have completed actions, changed settings, saved data, or sent reminders unless explicitly confirmed by the system. "
+        "Prefer direct answers over long explanations. "
+        "For simple questions, answer in a few sentences. "
+        "For comparisons, debugging, or design advice, use short bullets when helpful. "
         "Keep Telegram responses readable and not too long."
     )
 
@@ -62,7 +70,7 @@ async def generate_chat_response(
                 },
             ],
             temperature=0.2,
-            max_tokens=250,
+            max_tokens=80,
         )
 
         return response.choices[0].message.content or "I could not generate a response."
