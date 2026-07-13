@@ -10,3 +10,6 @@ def clear_active_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     context.user_data.pop("pending_study_topic", None)
     context.user_data.pop("pending_study_days", None)
+
+    context.user_data.pop("pending_future_me_goal_title", None)
+    context.user_data.pop("pending_future_me_goal_weeks", None)

@@ -12,7 +12,11 @@ from app.bot.handlers.study import (
     handle_study_goal_flow,
     handle_study_topic_flow,
 )
-
+from app.bot.handlers.future_me import (
+    handle_future_me_goal_description_flow,
+    handle_future_me_goal_title_flow,
+    handle_future_me_goal_weeks_flow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +82,30 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if active_flow == "study_goal":
         await handle_study_goal_flow(
+            update=update,
+            context=context,
+            chat_id=chat_id,
+            user_message=user_message,
+        )
+        return
+    if active_flow == "future_me_goal_title":
+        await handle_future_me_goal_title_flow(
+            update=update,
+            context=context,
+            user_message=user_message,
+        )
+        return
+
+    if active_flow == "future_me_goal_weeks":
+        await handle_future_me_goal_weeks_flow(
+            update=update,
+            context=context,
+            user_message=user_message,
+        )
+        return
+
+    if active_flow == "future_me_goal_description":
+        await handle_future_me_goal_description_flow(
             update=update,
             context=context,
             chat_id=chat_id,

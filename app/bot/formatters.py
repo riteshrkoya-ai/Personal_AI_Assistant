@@ -95,3 +95,67 @@ def format_study_tasks(tasks: list[dict]) -> str:
         lines.append("")
 
     return "\n".join(lines).strip()
+
+def format_future_me_goals(goals: list[dict]) -> str:
+    if not goals:
+        return "No active Future Me goals found."
+
+    lines = ["Your active Future Me goals:\n"]
+
+    for goal in goals:
+        title = goal.get("title", "")
+        description = goal.get("description")
+        target_weeks = goal.get("target_weeks")
+        target_date = goal.get("target_date")
+
+        lines.append(f"• {title}")
+
+        if description:
+            lines.append(f"  Why: {description}")
+
+        if target_weeks:
+            lines.append(f"  Target: {target_weeks} week(s)")
+
+        if target_date:
+            lines.append(f"  Target date: {target_date}")
+
+        lines.append("")
+
+    lines.append("To create a weekly plan, use:")
+    lines.append("Future Me → Create Weekly Plan")
+
+    return "\n".join(lines).strip()
+
+
+def format_future_me_tasks(tasks: list[dict]) -> str:
+    if not tasks:
+        return "No Future Me tasks found."
+
+    lines = ["Your Future Me tasks:\n"]
+
+    for task in tasks:
+        day_number = task.get("day_number")
+        title = task.get("title", "")
+        description = task.get("description")
+        status = task.get("status", "")
+        due_date = task.get("due_date")
+
+        if status == "completed":
+            status_label = "Done"
+        elif status == "cancelled":
+            status_label = "Cancelled"
+        else:
+            status_label = "Pending"
+
+        lines.append(f"• Day {day_number}: {title}")
+        lines.append(f"  Status: {status_label}")
+
+        if due_date:
+            lines.append(f"  Due: {due_date}")
+
+        if description:
+            lines.append(f"  {description}")
+
+        lines.append("")
+
+    return "\n".join(lines).strip()

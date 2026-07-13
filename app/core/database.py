@@ -47,6 +47,7 @@ async def check_database_connection() -> bool:
 async def create_database_tables() -> None:
     from app.models.chat_message import ChatMessage  # noqa: F401
     from app.models.daily_summary import DailySummarySetting  # noqa: F401
+    from app.models.future_me import FutureMeGoal, FutureMeTask  # noqa: F401
     from app.models.personal_memory import PersonalMemory  # noqa: F401
     from app.models.reminder import Reminder  # noqa: F401
     from app.models.study import StudyPlan, StudyTask  # noqa: F401

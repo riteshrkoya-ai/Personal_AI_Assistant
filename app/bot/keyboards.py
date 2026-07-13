@@ -354,3 +354,97 @@ def daily_summary_time_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+def future_me_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Set Future Me Goal", callback_data="future:set_goal"),
+                InlineKeyboardButton("View Goals", callback_data="future:goals"),
+            ],
+            [
+                InlineKeyboardButton("Create Weekly Plan", callback_data="future:plan_menu"),
+                InlineKeyboardButton("View Tasks", callback_data="future:tasks"),
+            ],
+            [
+                InlineKeyboardButton("Cancel Goal", callback_data="future:cancel_menu"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="menu:main"),
+            ],
+        ]
+    )
+
+
+def back_to_future_me_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Future Me Menu", callback_data="menu:future_me")]
+        ]
+    )
+
+
+def future_me_goal_plan_keyboard(goals: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    for goal in goals:
+        goal_id = goal.get("id")
+        title = goal.get("title", "")
+
+        label = f"Create Plan: {title[:30]}"
+        if len(title) > 30:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"future_plan:{goal_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Future Me Menu", callback_data="menu:future_me")])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def future_me_goal_cancel_keyboard(goals: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    for goal in goals:
+        goal_id = goal.get("id")
+        title = goal.get("title", "")
+
+        label = f"Cancel: {title[:35]}"
+        if len(title) > 35:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"future_cancel:{goal_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Future Me Menu", callback_data="menu:future_me")])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def complete_future_me_task_keyboard(tasks: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    pending_tasks = [
+        task for task in tasks
+        if task.get("status") == "pending"
+    ]
+
+    for task in pending_tasks[:10]:
+        task_id = task.get("id")
+        day_number = task.get("day_number")
+        title = task.get("title", "")
+
+        label = f"Complete Day {day_number}: {title[:25]}"
+        if len(title) > 25:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"future_complete:{task_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Future Me Menu", callback_data="menu:future_me")])
+
+    return InlineKeyboardMarkup(rows)
