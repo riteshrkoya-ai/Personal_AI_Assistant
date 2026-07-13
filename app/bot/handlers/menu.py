@@ -8,6 +8,7 @@ from app.bot.api_client import (
     cancel_reminder_api,
     create_reminder_api,
     delete_memory_api,
+    get_daily_summary_api,
     list_memories_api,
     list_reminders_api,
     list_study_plans_api,
@@ -109,9 +110,11 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if data == "menu:summary":
+        summary = await get_daily_summary_api(chat_id)
+        summary_text = summary.get("summary_text", "I could not build a daily summary.")
+
         await query.edit_message_text(
-            "Daily Summary is coming in a later phase.\n\n"
-            "It will summarize your recent activity, memories, reminders, and progress.",
+            summary_text,
             reply_markup=back_to_main_keyboard(),
         )
         return
