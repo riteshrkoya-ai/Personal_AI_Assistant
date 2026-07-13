@@ -187,3 +187,11 @@ async def create_study_plan_reminders_api(
             "minute": minute,
         },
     )
+
+async def get_daily_summary_api(chat_id: int) -> dict:
+    return await post_to_backend(
+        "/daily-summary",
+        {
+            "telegram_chat_id": chat_id,
+        },
+    )
