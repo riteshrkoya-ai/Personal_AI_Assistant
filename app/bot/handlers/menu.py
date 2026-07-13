@@ -8,22 +8,30 @@ from app.bot.api_client import (
     cancel_reminder_api,
     create_reminder_api,
     delete_memory_api,
+    disable_daily_summary_setting_api,
     get_daily_summary_api,
+    list_future_me_goals_api,
+    list_future_me_tasks_api,
     list_memories_api,
     list_reminders_api,
     list_study_plans_api,
     list_study_tasks_api,
-    disable_daily_summary_setting_api,
-    get_daily_summary_api,
     update_daily_summary_setting_api,
 )
 from app.bot.auth import is_authorized, send_unauthorized_callback
 from app.bot.formatters import (
+    format_future_me_goals,
+    format_future_me_tasks,
     format_memory_items,
     format_reminder_datetime,
     format_reminder_items,
     format_study_plans,
     format_study_tasks,
+)
+from app.bot.handlers.future_me import (
+    cancel_selected_future_me_goal,
+    complete_selected_future_me_task,
+    create_selected_future_me_weekly_plan,
 )
 from app.bot.handlers.reminders import get_quick_reminder_time, get_selected_reminder_day
 from app.bot.handlers.study import (
@@ -32,14 +40,21 @@ from app.bot.handlers.study import (
     create_selected_study_reminders,
 )
 from app.bot.keyboards import (
+    back_to_future_me_keyboard,
     back_to_main_keyboard,
     back_to_memory_keyboard,
     back_to_reminders_keyboard,
     back_to_study_keyboard,
     cancel_reminder_keyboard,
     cancel_study_plan_keyboard,
+    complete_future_me_task_keyboard,
     complete_study_task_keyboard,
+    daily_summary_menu_keyboard,
+    daily_summary_time_keyboard,
     delete_memory_keyboard,
+    future_me_goal_cancel_keyboard,
+    future_me_goal_plan_keyboard,
+    future_me_menu_keyboard,
     main_menu_keyboard,
     memory_menu_keyboard,
     reminder_day_keyboard,
@@ -49,8 +64,6 @@ from app.bot.keyboards import (
     reminder_time_keyboard,
     study_menu_keyboard,
     study_reminder_time_keyboard,
-    daily_summary_menu_keyboard,
-    daily_summary_time_keyboard,
 )
 from app.bot.state import clear_active_flow
 from app.core.config import get_settings
@@ -107,10 +120,10 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if data == "menu:future_me":
+        clear_active_flow(context)
         await query.edit_message_text(
-            "Future Me is coming in Phase 6.\n\n"
-            "Soon you will be able to save goals and create weekly plans.",
-            reply_markup=back_to_main_keyboard(),
+            "Future Me options:",
+            reply_markup=future_me_menu_keyboard(),
         )
         return
 
@@ -121,6 +134,34 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=daily_summary_menu_keyboard(),
         )
         return
+
+    if data == "menu:help":
+        await query.edit_message_text(
+            "Personal AI Assistant MVP Help\n\n"
+            "Use the buttons from /menu to access each feature.\n\n"
+            "Available modules:\n"
+            "• Memory — save, view, search, and delete personal memories\n"
+            "• Reminders — create, view, cancel, and receive reminders\n"
+            "• Study — create study plans, complete tasks, and add study reminders\n"
+            "• Daily Summary — view or schedule a daily activity summary\n"
+            "• Future Me — set long-term goals, create weekly plans, and track progress\n\n"
+            "Useful shortcuts:\n"
+            "/menu - open the main menu\n"
+            "/remember <text> - save a memory\n"
+            "/memories - view saved memories\n"
+            "/memorysearch <query> - search memories\n"
+            "/forget - choose a memory to delete\n"
+            "/remind YYYY-MM-DD HH:MM <message> - create a reminder\n"
+            "/reminders - view reminders\n"
+            "/cancelreminder - choose a reminder to cancel\n\n"
+            "MVP focus:\n"
+            "This assistant is local-first, Telegram-based, multi-user, and designed with user data isolation.",
+            reply_markup=back_to_main_keyboard(),
+        )
+        return
+
+    # Daily Summary callbacks
+
     if data == "summary:view":
         try:
             summary = await get_daily_summary_api(chat_id)
@@ -133,11 +174,10 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as exc:
             await query.edit_message_text(
                 "I could not generate the daily summary right now.\n\n"
-            f"Technical detail: {type(exc).__name__}: {exc}",
+                f"Technical detail: {type(exc).__name__}: {exc}",
                 reply_markup=back_to_main_keyboard(),
             )
         return
-
 
     if data == "summary:enable_menu":
         await query.edit_message_text(
@@ -145,7 +185,6 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=daily_summary_time_keyboard(),
         )
         return
-
 
     if data.startswith("summary_time:"):
         parts = data.split(":")
@@ -157,8 +196,15 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return
 
-        hour = int(parts[1])
-        minute = int(parts[2])
+        try:
+            hour = int(parts[1])
+            minute = int(parts[2])
+        except ValueError:
+            await query.edit_message_text(
+                "I could not understand that summary time.",
+                reply_markup=back_to_main_keyboard(),
+            )
+            return
 
         result = await update_daily_summary_setting_api(
             chat_id=chat_id,
@@ -174,7 +220,6 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-
     if data == "summary:disable":
         await disable_daily_summary_setting_api(chat_id)
 
@@ -184,20 +229,135 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
-    if data == "menu:help":
+    # Future Me callbacks
+
+    if data == "future:set_goal":
+        context.user_data["active_flow"] = "future_me_goal_title"
         await query.edit_message_text(
-            "Use the buttons to interact with the assistant.\n\n"
-            "Shortcuts are also available:\n"
-            "/remember <text>\n"
-            "/memories\n"
-            "/memorysearch <query>\n"
-            "/forget - choose a memory to delete\n"
-            "/remind YYYY-MM-DD HH:MM <message>\n"
-            "/reminders\n"
-            "/cancelreminder - choose a reminder to cancel",
-            reply_markup=back_to_main_keyboard(),
+            "What goal do you want your future self to achieve?\n\n"
+            "Example: Become stronger in FastAPI and AI agents",
+            reply_markup=back_to_future_me_keyboard(),
         )
         return
+
+    if data == "future:goals":
+        goals = await list_future_me_goals_api(chat_id)
+        await query.edit_message_text(
+            format_future_me_goals(goals),
+            reply_markup=back_to_future_me_keyboard(),
+        )
+        return
+
+    if data == "future:plan_menu":
+        goals = await list_future_me_goals_api(chat_id)
+
+        if not goals:
+            await query.edit_message_text(
+                "No active Future Me goals found.\n\n"
+                "Create one first using Future Me → Set Future Me Goal.",
+                reply_markup=back_to_future_me_keyboard(),
+            )
+            return
+
+        await query.edit_message_text(
+            "Select a Future Me goal to create a weekly plan:",
+            reply_markup=future_me_goal_plan_keyboard(goals),
+        )
+        return
+
+    if data.startswith("future_plan:"):
+        goal_id = int(data.split(":", 1)[1])
+
+        result = await create_selected_future_me_weekly_plan(
+            chat_id=chat_id,
+            goal_id=goal_id,
+            days=5,
+        )
+
+        tasks = result.get("tasks", [])
+
+        if result.get("created") and tasks:
+            await query.edit_message_text(
+                "Future Me weekly plan is ready.\n\n"
+                f"{format_future_me_tasks(tasks)}",
+                reply_markup=complete_future_me_task_keyboard(tasks),
+            )
+        else:
+            await query.edit_message_text(
+                result.get("message", "I could not create a weekly plan."),
+                reply_markup=back_to_future_me_keyboard(),
+            )
+        return
+
+    if data == "future:tasks":
+        tasks = await list_future_me_tasks_api(chat_id)
+        await query.edit_message_text(
+            format_future_me_tasks(tasks),
+            reply_markup=complete_future_me_task_keyboard(tasks),
+        )
+        return
+
+    if data.startswith("future_complete:"):
+        task_id = int(data.split(":", 1)[1])
+
+        completed = await complete_selected_future_me_task(
+            chat_id=chat_id,
+            task_id=task_id,
+        )
+
+        if completed:
+            tasks = await list_future_me_tasks_api(chat_id)
+            await query.edit_message_text(
+                "Future Me task completed.\n\n"
+                f"{format_future_me_tasks(tasks)}",
+                reply_markup=complete_future_me_task_keyboard(tasks),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that pending Future Me task.",
+                reply_markup=back_to_future_me_keyboard(),
+            )
+        return
+
+    if data == "future:cancel_menu":
+        goals = await list_future_me_goals_api(chat_id)
+
+        if not goals:
+            await query.edit_message_text(
+                "No active Future Me goals found.",
+                reply_markup=back_to_future_me_keyboard(),
+            )
+            return
+
+        await query.edit_message_text(
+            "Select a Future Me goal to cancel:",
+            reply_markup=future_me_goal_cancel_keyboard(goals),
+        )
+        return
+
+    if data.startswith("future_cancel:"):
+        goal_id = int(data.split(":", 1)[1])
+
+        cancelled = await cancel_selected_future_me_goal(
+            chat_id=chat_id,
+            goal_id=goal_id,
+        )
+
+        if cancelled:
+            goals = await list_future_me_goals_api(chat_id)
+            await query.edit_message_text(
+                "Future Me goal cancelled.\n\n"
+                f"{format_future_me_goals(goals)}",
+                reply_markup=back_to_future_me_keyboard(),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that active Future Me goal.",
+                reply_markup=back_to_future_me_keyboard(),
+            )
+        return
+
+    # Study callbacks
 
     if data == "study:create":
         context.user_data["active_flow"] = "study_topic"
@@ -344,6 +504,8 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         return
 
+    # Memory callbacks
+
     if data == "memory:save":
         context.user_data["active_flow"] = "save_memory"
         await query.edit_message_text(
@@ -403,6 +565,8 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 reply_markup=back_to_memory_keyboard(),
             )
         return
+
+    # Reminder callbacks
 
     if data == "reminder:create":
         context.user_data["active_flow"] = "reminder_message"
@@ -611,6 +775,8 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=back_to_reminders_keyboard(),
         )
         return
+
+    # Generic flow cancel
 
     if data == "flow:cancel":
         clear_active_flow(context)

@@ -10,6 +10,7 @@ from app.api.reminders import router as reminders_router
 from app.api.study import router as study_router
 from app.core.config import get_settings
 from app.core.database import create_database_tables
+from app.api.future_me import router as future_me_router
 
 settings = get_settings()
 
@@ -33,6 +34,7 @@ app.include_router(memory_router)
 app.include_router(reminders_router)
 app.include_router(study_router)
 app.include_router(daily_summary_router)
+app.include_router(future_me_router)
 
 
 @app.get("/")

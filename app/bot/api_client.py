@@ -238,3 +238,82 @@ async def mark_daily_summary_sent_api(setting_id: int) -> bool:
         },
     )
     return bool(data.get("marked"))
+
+async def create_future_me_goal_api(
+    chat_id: int,
+    title: str,
+    description: str | None = None,
+    target_weeks: int = 4,
+) -> dict:
+    return await post_to_backend(
+        "/future-me/goals",
+        {
+            "telegram_chat_id": chat_id,
+            "title": title,
+            "description": description,
+            "target_weeks": target_weeks,
+            "source": "telegram",
+        },
+    )
+
+
+async def list_future_me_goals_api(chat_id: int, limit: int = 20) -> list[dict]:
+    data = await post_to_backend(
+        "/future-me/goals/list",
+        {
+            "telegram_chat_id": chat_id,
+            "status": "active",
+            "limit": limit,
+        },
+    )
+    return data.get("goals", [])
+
+
+async def cancel_future_me_goal_api(chat_id: int, goal_id: int) -> bool:
+    data = await post_to_backend(
+        "/future-me/goals/cancel",
+        {
+            "telegram_chat_id": chat_id,
+            "goal_id": goal_id,
+        },
+    )
+    return bool(data.get("cancelled"))
+
+
+async def create_future_me_weekly_plan_api(
+    chat_id: int,
+    goal_id: int,
+    days: int = 5,
+) -> dict:
+    return await post_to_backend(
+        "/future-me/weekly-plan",
+        {
+            "telegram_chat_id": chat_id,
+            "goal_id": goal_id,
+            "days": days,
+        },
+    )
+
+
+async def list_future_me_tasks_api(chat_id: int, limit: int = 50) -> list[dict]:
+    data = await post_to_backend(
+        "/future-me/tasks/list",
+        {
+            "telegram_chat_id": chat_id,
+            "goal_id": None,
+            "status": None,
+            "limit": limit,
+        },
+    )
+    return data.get("tasks", [])
+
+
+async def complete_future_me_task_api(chat_id: int, task_id: int) -> bool:
+    data = await post_to_backend(
+        "/future-me/tasks/complete",
+        {
+            "telegram_chat_id": chat_id,
+            "task_id": task_id,
+        },
+    )
+    return bool(data.get("completed"))

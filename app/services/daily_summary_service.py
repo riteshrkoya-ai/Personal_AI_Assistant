@@ -1,16 +1,16 @@
-from datetime import datetime, time
-from datetime import date
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
-
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.daily_summary import DailySummarySetting
+from app.models.future_me import FutureMeGoal, FutureMeTask
 from app.models.personal_memory import PersonalMemory
 from app.models.reminder import Reminder
 from app.models.study import StudyPlan, StudyTask
-from app.models.daily_summary import DailySummarySetting
 from app.models.user import User
+
 
 def _clip_text(text: str, limit: int = 80) -> str:
     clean_text = " ".join((text or "").split()).strip()
@@ -83,6 +83,44 @@ async def build_daily_summary(
     )
     pending_tasks = list(pending_tasks_result.scalars().all())
 
+    active_future_goals_result = await session.execute(
+        select(FutureMeGoal)
+        .where(
+            FutureMeGoal.user_id == user_id,
+            FutureMeGoal.status == "active",
+        )
+        .order_by(FutureMeGoal.created_at.desc())
+        .limit(5)
+    )
+    active_future_goals = list(active_future_goals_result.scalars().all())
+
+    completed_future_tasks_today_result = await session.execute(
+        select(FutureMeTask)
+        .where(
+            FutureMeTask.user_id == user_id,
+            FutureMeTask.status == "completed",
+            FutureMeTask.completed_at.is_not(None),
+            FutureMeTask.completed_at >= start_of_day,
+            FutureMeTask.completed_at <= end_of_day,
+        )
+        .order_by(FutureMeTask.completed_at.desc())
+        .limit(10)
+    )
+    completed_future_tasks_today = list(
+        completed_future_tasks_today_result.scalars().all()
+    )
+
+    pending_future_tasks_result = await session.execute(
+        select(FutureMeTask)
+        .where(
+            FutureMeTask.user_id == user_id,
+            FutureMeTask.status == "pending",
+        )
+        .order_by(FutureMeTask.goal_id.desc(), FutureMeTask.day_number.asc())
+        .limit(10)
+    )
+    pending_future_tasks = list(pending_future_tasks_result.scalars().all())
+
     pending_reminders_result = await session.execute(
         select(Reminder)
         .where(
@@ -123,6 +161,9 @@ async def build_daily_summary(
         active_plans=active_plans,
         completed_tasks_today=completed_tasks_today,
         pending_tasks=pending_tasks,
+        active_future_goals=active_future_goals,
+        completed_future_tasks_today=completed_future_tasks_today,
+        pending_future_tasks=pending_future_tasks,
         pending_reminders=pending_reminders,
         reminders_due_today=reminders_due_today,
         memories_today=memories_today,
@@ -135,6 +176,9 @@ async def build_daily_summary(
             "active_study_plans": len(active_plans),
             "completed_study_tasks_today": len(completed_tasks_today),
             "pending_study_tasks": len(pending_tasks),
+            "active_future_me_goals": len(active_future_goals),
+            "completed_future_me_tasks_today": len(completed_future_tasks_today),
+            "pending_future_me_tasks": len(pending_future_tasks),
             "pending_reminders": len(pending_reminders),
             "reminders_due_today": len(reminders_due_today),
             "memories_saved_today": len(memories_today),
@@ -146,6 +190,9 @@ def format_daily_summary_text(
     active_plans: list[StudyPlan],
     completed_tasks_today: list[StudyTask],
     pending_tasks: list[StudyTask],
+    active_future_goals: list[FutureMeGoal],
+    completed_future_tasks_today: list[FutureMeTask],
+    pending_future_tasks: list[FutureMeTask],
     pending_reminders: list[Reminder],
     reminders_due_today: list[Reminder],
     memories_today: list[PersonalMemory],
@@ -185,6 +232,37 @@ def format_daily_summary_text(
         lines.append("• No pending study tasks.")
 
     lines.append("")
+    lines.append("Future Me")
+    if active_future_goals:
+        lines.append(f"• Active Future Me goals: {len(active_future_goals)}")
+        for goal in active_future_goals[:3]:
+            if goal.description:
+                lines.append(f"  - {goal.title} — {_clip_text(goal.description, 60)}")
+            else:
+                lines.append(f"  - {goal.title}")
+    else:
+        lines.append("• No active Future Me goals.")
+
+    if completed_future_tasks_today:
+        lines.append(
+            f"• Completed Future Me tasks today: {len(completed_future_tasks_today)}"
+        )
+        for task in completed_future_tasks_today[:3]:
+            lines.append(f"  - Day {task.day_number}: {_clip_text(task.title, 70)}")
+    else:
+        lines.append("• Completed Future Me tasks today: 0")
+
+    if pending_future_tasks:
+        lines.append(f"• Pending Future Me tasks: {len(pending_future_tasks)}")
+        next_future_task = pending_future_tasks[0]
+        lines.append(
+            f"• Suggested next Future Me task: Day {next_future_task.day_number}: "
+            f"{_clip_text(next_future_task.title, 70)}"
+        )
+    else:
+        lines.append("• No pending Future Me tasks.")
+
+    lines.append("")
     lines.append("Reminders")
     lines.append(f"• Pending reminders: {len(pending_reminders)}")
 
@@ -214,6 +292,12 @@ def format_daily_summary_text(
             f"Complete your next study task: Day {next_task.day_number}: "
             f"{_clip_text(next_task.title, 80)}"
         )
+    elif pending_future_tasks:
+        next_future_task = pending_future_tasks[0]
+        lines.append(
+            f"Work on your next Future Me task: Day {next_future_task.day_number}: "
+            f"{_clip_text(next_future_task.title, 80)}"
+        )
     elif reminders_due_today:
         next_reminder = reminders_due_today[0]
         lines.append(
@@ -221,13 +305,16 @@ def format_daily_summary_text(
         )
     elif active_plans:
         lines.append("Review your active study plan and decide the next task.")
+    elif active_future_goals:
+        lines.append("Review your Future Me goal and create or complete the next task.")
     else:
-        lines.append("Create a study plan or save a memory to make the assistant more useful.")
+        lines.append("Create a study plan, Future Me goal, or memory to make the assistant more useful.")
 
     lines.append("")
     lines.append(f"Timezone: {timezone_name}")
 
     return "\n".join(lines)
+
 
 async def get_or_create_daily_summary_setting(
     session: AsyncSession,
