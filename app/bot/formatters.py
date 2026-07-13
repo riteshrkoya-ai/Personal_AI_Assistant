@@ -81,10 +81,17 @@ def format_study_tasks(tasks: list[dict]) -> str:
     for task in tasks:
         day_number = task.get("day_number")
         title = task.get("title", "")
+        description = task.get("description")
         status = task.get("status", "")
 
-        lines.append(f"• Day {day_number}: {title} [{status}]")
+        status_label = "Done" if status == "completed" else "Pending"
 
-    lines.append("\nTask completion buttons will be added in Phase 5B.")
+        lines.append(f"• Day {day_number}: {title}")
+        lines.append(f"  Status: {status_label}")
 
-    return "\n".join(lines)
+        if description:
+            lines.append(f"  {description}")
+
+        lines.append("")
+
+    return "\n".join(lines).strip()

@@ -151,3 +151,23 @@ async def complete_study_task_api(chat_id: int, task_id: int) -> bool:
         },
     )
     return bool(data.get("completed"))
+
+async def cancel_study_plan_api(chat_id: int, study_plan_id: int) -> bool:
+    data = await post_to_backend(
+        "/study/plans/cancel",
+        {
+            "telegram_chat_id": chat_id,
+            "study_plan_id": study_plan_id,
+        },
+    )
+    return bool(data.get("cancelled"))
+
+async def cancel_study_plan_api(chat_id: int, study_plan_id: int) -> bool:
+    data = await post_to_backend(
+        "/study/plans/cancel",
+        {
+            "telegram_chat_id": chat_id,
+            "study_plan_id": study_plan_id,
+        },
+    )
+    return bool(data.get("cancelled"))

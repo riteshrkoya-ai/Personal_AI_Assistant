@@ -162,3 +162,40 @@ async def complete_study_task(
     await session.flush()
 
     return True
+
+async def cancel_study_plan(
+    session: AsyncSession,
+    user_id: int,
+    study_plan_id: int,
+) -> bool:
+    result = await session.execute(
+        select(StudyPlan).where(
+            StudyPlan.id == study_plan_id,
+            StudyPlan.user_id == user_id,
+            StudyPlan.status == "active",
+        )
+    )
+
+    study_plan = result.scalar_one_or_none()
+
+    if not study_plan:
+        return False
+
+    study_plan.status = "cancelled"
+
+    tasks_result = await session.execute(
+        select(StudyTask).where(
+            StudyTask.study_plan_id == study_plan_id,
+            StudyTask.user_id == user_id,
+            StudyTask.status == "pending",
+        )
+    )
+
+    pending_tasks = list(tasks_result.scalars().all())
+
+    for task in pending_tasks:
+        task.status = "cancelled"
+
+    await session.flush()
+
+    return True
