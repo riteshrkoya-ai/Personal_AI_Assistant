@@ -98,3 +98,56 @@ async def cancel_reminder_api(chat_id: int, reminder_id: int) -> bool:
         },
     )
     return bool(data.get("cancelled"))
+
+async def create_study_plan_api(
+    chat_id: int,
+    topic: str,
+    goal: str | None = None,
+    days: int = 5,
+) -> dict:
+    return await post_to_backend(
+        "/study/plans",
+        {
+            "telegram_chat_id": chat_id,
+            "topic": topic,
+            "goal": goal,
+            "days": days,
+            "source": "telegram",
+        },
+    )
+
+
+async def list_study_plans_api(chat_id: int, limit: int = 20) -> list[dict]:
+    data = await post_to_backend(
+        "/study/plans/list",
+        {
+            "telegram_chat_id": chat_id,
+            "status": "active",
+            "limit": limit,
+        },
+    )
+    return data.get("study_plans", [])
+
+
+async def list_study_tasks_api(chat_id: int, limit: int = 50) -> list[dict]:
+    data = await post_to_backend(
+        "/study/tasks/list",
+        {
+            "telegram_chat_id": chat_id,
+            "study_plan_id": None,
+            "status": None,
+            "limit": limit,
+        },
+    )
+    return data.get("tasks", [])
+
+
+async def complete_study_task_api(chat_id: int, task_id: int) -> bool:
+    data = await post_to_backend(
+        "/study/tasks/complete",
+        {
+            "telegram_chat_id": chat_id,
+            "task_id": task_id,
+        },
+    )
+    return bool(data.get("completed"))

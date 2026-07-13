@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.database import create_database_tables
 from app.api.memory import router as memory_router
 from app.api.reminders import router as reminders_router
+from app.api.study import router as study_router
 
 settings = get_settings()
 
@@ -29,6 +30,7 @@ app.include_router(health_router)
 app.include_router(chat_router)
 app.include_router(memory_router)
 app.include_router(reminders_router)
+app.include_router(study_router)
 
 @app.get("/")
 async def root():

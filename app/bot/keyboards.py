@@ -56,6 +56,21 @@ def reminder_menu_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+def study_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Create Study Plan", callback_data="study:create"),
+                InlineKeyboardButton("View Study Plans", callback_data="study:list"),
+            ],
+            [
+                InlineKeyboardButton("View Study Tasks", callback_data="study:tasks"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="menu:main"),
+            ],
+        ]
+    )
 
 def reminder_time_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -167,6 +182,13 @@ def back_to_reminders_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+
+def back_to_study_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Study Menu", callback_data="menu:study")]
+        ]
+    )
 
 def delete_memory_keyboard(memories: list[dict]) -> InlineKeyboardMarkup:
     rows = []

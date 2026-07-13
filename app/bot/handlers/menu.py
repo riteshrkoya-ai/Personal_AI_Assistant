@@ -10,14 +10,23 @@ from app.bot.api_client import (
     delete_memory_api,
     list_memories_api,
     list_reminders_api,
+    list_study_plans_api,
+    list_study_tasks_api,
 )
 from app.bot.auth import is_authorized, send_unauthorized_callback
-from app.bot.formatters import format_memory_items, format_reminder_datetime, format_reminder_items
+from app.bot.formatters import (
+    format_memory_items,
+    format_reminder_datetime,
+    format_reminder_items,
+    format_study_plans,
+    format_study_tasks,
+)
 from app.bot.handlers.reminders import get_quick_reminder_time, get_selected_reminder_day
 from app.bot.keyboards import (
     back_to_main_keyboard,
     back_to_memory_keyboard,
     back_to_reminders_keyboard,
+    back_to_study_keyboard,
     cancel_reminder_keyboard,
     delete_memory_keyboard,
     main_menu_keyboard,
@@ -27,6 +36,7 @@ from app.bot.keyboards import (
     reminder_menu_keyboard,
     reminder_minute_keyboard,
     reminder_time_keyboard,
+    study_menu_keyboard,
 )
 from app.bot.state import clear_active_flow
 from app.core.config import get_settings
@@ -75,10 +85,10 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if data == "menu:study":
+        clear_active_flow(context)
         await query.edit_message_text(
-            "Study Assistant is coming in Phase 5.\n\n"
-            "Soon you will be able to create study plans and track study tasks.",
-            reply_markup=back_to_main_keyboard(),
+            "Study options:",
+            reply_markup=study_menu_keyboard(),
         )
         return
 
@@ -110,6 +120,31 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "/reminders\n"
             "/cancelreminder - choose a reminder to cancel",
             reply_markup=back_to_main_keyboard(),
+        )
+        return
+
+    if data == "study:create":
+        await query.edit_message_text(
+            "Create Study Plan will be added in Phase 5B.\n\n"
+            "For Phase 5A, the backend database and API are ready. "
+            "You can test study plan creation from FastAPI /docs.",
+            reply_markup=back_to_study_keyboard(),
+        )
+        return
+
+    if data == "study:list":
+        study_plans = await list_study_plans_api(chat_id)
+        await query.edit_message_text(
+            format_study_plans(study_plans),
+            reply_markup=back_to_study_keyboard(),
+        )
+        return
+
+    if data == "study:tasks":
+        tasks = await list_study_tasks_api(chat_id)
+        await query.edit_message_text(
+            format_study_tasks(tasks),
+            reply_markup=back_to_study_keyboard(),
         )
         return
 

@@ -50,3 +50,41 @@ def format_reminder_items(reminders: list[dict]) -> str:
     lines.append("Reminder Menu → Cancel Reminder")
 
     return "\n".join(lines)
+
+def format_study_plans(study_plans: list[dict]) -> str:
+    if not study_plans:
+        return "No active study plans found."
+
+    lines = ["Your active study plans:\n"]
+
+    for plan in study_plans:
+        topic = plan.get("topic", "")
+        goal = plan.get("goal")
+
+        if goal:
+            lines.append(f"• {topic}\n  Goal: {goal}")
+        else:
+            lines.append(f"• {topic}")
+
+    lines.append("\nTo create a new study plan, use:")
+    lines.append("Study Menu → Create Study Plan")
+
+    return "\n".join(lines)
+
+
+def format_study_tasks(tasks: list[dict]) -> str:
+    if not tasks:
+        return "No study tasks found."
+
+    lines = ["Your study tasks:\n"]
+
+    for task in tasks:
+        day_number = task.get("day_number")
+        title = task.get("title", "")
+        status = task.get("status", "")
+
+        lines.append(f"• Day {day_number}: {title} [{status}]")
+
+    lines.append("\nTask completion buttons will be added in Phase 5B.")
+
+    return "\n".join(lines)
