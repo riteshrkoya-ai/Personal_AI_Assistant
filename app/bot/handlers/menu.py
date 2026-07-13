@@ -3,7 +3,10 @@ from zoneinfo import ZoneInfo
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-
+from app.bot.handlers.study import (
+    cancel_selected_study_plan,
+    complete_selected_study_task,
+)
 from app.bot.api_client import (
     cancel_reminder_api,
     create_reminder_api,
@@ -28,6 +31,8 @@ from app.bot.keyboards import (
     back_to_reminders_keyboard,
     back_to_study_keyboard,
     cancel_reminder_keyboard,
+    cancel_study_plan_keyboard,
+    complete_study_task_keyboard,
     delete_memory_keyboard,
     main_menu_keyboard,
     memory_menu_keyboard,
@@ -124,10 +129,10 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if data == "study:create":
+        context.user_data["active_flow"] = "study_topic"
         await query.edit_message_text(
-            "Create Study Plan will be added in Phase 5B.\n\n"
-            "For Phase 5A, the backend database and API are ready. "
-            "You can test study plan creation from FastAPI /docs.",
+            "What topic do you want to study?\n\n"
+            "Example: FastAPI and Docker",
             reply_markup=back_to_study_keyboard(),
         )
         return
@@ -144,8 +149,46 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         tasks = await list_study_tasks_api(chat_id)
         await query.edit_message_text(
             format_study_tasks(tasks),
-            reply_markup=back_to_study_keyboard(),
+            reply_markup=complete_study_task_keyboard(tasks),
         )
+        return
+    
+    if data == "study:cancel_menu":
+        study_plans = await list_study_plans_api(chat_id)
+
+        if not study_plans:
+            await query.edit_message_text(
+                "No active study plans found.",
+                reply_markup=back_to_study_keyboard(),
+            )
+            return
+
+        await query.edit_message_text(
+            "Select a study plan to cancel:",
+            reply_markup=cancel_study_plan_keyboard(study_plans),
+        )
+        return
+
+    if data.startswith("study_cancel:"):
+        study_plan_id = int(data.split(":", 1)[1])
+
+        cancelled = await cancel_selected_study_plan(
+            chat_id=chat_id,
+            study_plan_id=study_plan_id,
+        )
+
+        if cancelled:
+            study_plans = await list_study_plans_api(chat_id)
+            await query.edit_message_text(
+                "Study plan cancelled.\n\n"
+                f"{format_study_plans(study_plans)}",
+                reply_markup=back_to_study_keyboard(),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that active study plan.",
+                reply_markup=back_to_study_keyboard(),
+            )
         return
 
     if data == "memory:save":
@@ -422,4 +465,25 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "Cancelled.",
             reply_markup=main_menu_keyboard(),
         )
+        return
+    
+    if data.startswith("study_complete:"):
+        task_id = int(data.split(":", 1)[1])
+        completed = await complete_selected_study_task(
+            chat_id=chat_id,
+            task_id=task_id,
+        )
+
+        if completed:
+            tasks = await list_study_tasks_api(chat_id)
+            await query.edit_message_text(
+                "Study task completed.\n\n"
+                f"{format_study_tasks(tasks)}",
+                reply_markup=complete_study_task_keyboard(tasks),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that pending study task.",
+                reply_markup=back_to_study_keyboard(),
+            )
         return

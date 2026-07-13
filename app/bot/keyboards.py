@@ -65,6 +65,7 @@ def study_menu_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("View Study Tasks", callback_data="study:tasks"),
+                InlineKeyboardButton("Cancel Study Plan", callback_data="study:cancel_menu"),
             ],
             [
                 InlineKeyboardButton("Back", callback_data="menu:main"),
@@ -227,5 +228,49 @@ def cancel_reminder_keyboard(reminders: list[dict]) -> InlineKeyboardMarkup:
         )
 
     rows.append([InlineKeyboardButton("Back", callback_data="menu:reminders")])
+
+    return InlineKeyboardMarkup(rows)
+
+def complete_study_task_keyboard(tasks: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    pending_tasks = [
+        task for task in tasks
+        if task.get("status") == "pending"
+    ]
+
+    for task in pending_tasks[:10]:
+        task_id = task.get("id")
+        day_number = task.get("day_number")
+        title = task.get("title", "")
+
+        label = f"Complete Day {day_number}: {title[:25]}"
+        if len(title) > 25:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"study_complete:{task_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Study Menu", callback_data="menu:study")])
+
+    return InlineKeyboardMarkup(rows)
+
+def cancel_study_plan_keyboard(study_plans: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    for plan in study_plans:
+        plan_id = plan.get("id")
+        topic = plan.get("topic", "")
+
+        label = f"Cancel: {topic[:35]}"
+        if len(topic) > 35:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"study_cancel:{plan_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Study Menu", callback_data="menu:study")])
 
     return InlineKeyboardMarkup(rows)

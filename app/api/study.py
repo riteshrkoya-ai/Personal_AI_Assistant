@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.core.database import AsyncSessionLocal
 from app.services.study_service import (
+    cancel_study_plan,
     complete_study_task,
     create_study_plan,
     list_user_study_plans,
@@ -82,6 +83,16 @@ class StudyTaskCompleteResponse(BaseModel):
     completed: bool
     message: str
 
+class StudyPlanCancelRequest(BaseModel):
+    telegram_chat_id: int
+    study_plan_id: int
+
+
+class StudyPlanCancelResponse(BaseModel):
+    user_id: int
+    study_plan_id: int
+    cancelled: bool
+    message: str
 
 def to_study_plan_item(study_plan) -> StudyPlanItem:
     return StudyPlanItem(
@@ -215,4 +226,37 @@ async def complete_task(
             task_id=request.task_id,
             completed=False,
             message="No pending study task was found for this user.",
+        )
+    
+@router.post("/plans/cancel", response_model=StudyPlanCancelResponse)
+async def cancel_plan(
+    request: StudyPlanCancelRequest,
+) -> StudyPlanCancelResponse:
+    async with AsyncSessionLocal() as session:
+        user = await get_or_create_telegram_user(
+            session=session,
+            telegram_chat_id=request.telegram_chat_id,
+        )
+
+        cancelled = await cancel_study_plan(
+            session=session,
+            user_id=user.id,
+            study_plan_id=request.study_plan_id,
+        )
+
+        await session.commit()
+
+        if cancelled:
+            return StudyPlanCancelResponse(
+                user_id=user.id,
+                study_plan_id=request.study_plan_id,
+                cancelled=True,
+                message="Study plan cancelled.",
+            )
+
+        return StudyPlanCancelResponse(
+            user_id=user.id,
+            study_plan_id=request.study_plan_id,
+            cancelled=False,
+            message="No active study plan was found for this user.",
         )

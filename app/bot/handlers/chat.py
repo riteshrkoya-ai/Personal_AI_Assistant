@@ -7,6 +7,11 @@ from app.bot.api_client import post_to_backend
 from app.bot.auth import is_authorized, send_unauthorized_message
 from app.bot.handlers.memory import handle_memory_search_flow, handle_save_memory_flow
 from app.bot.handlers.reminders import handle_reminder_message_flow
+from app.bot.handlers.study import (
+    handle_study_days_flow,
+    handle_study_goal_flow,
+    handle_study_topic_flow,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +56,31 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_reminder_message_flow(
             update=update,
             context=context,
+            user_message=user_message,
+        )
+        return
+
+    if active_flow == "study_topic":
+        await handle_study_topic_flow(
+            update=update,
+            context=context,
+            user_message=user_message,
+        )
+        return
+
+    if active_flow == "study_days":
+        await handle_study_days_flow(
+            update=update,
+            context=context,
+            user_message=user_message,
+        )
+        return
+
+    if active_flow == "study_goal":
+        await handle_study_goal_flow(
+            update=update,
+            context=context,
+            chat_id=chat_id,
             user_message=user_message,
         )
         return
