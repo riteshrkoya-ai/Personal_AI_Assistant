@@ -45,13 +45,8 @@ async def check_database_connection() -> bool:
 
 
 async def create_database_tables() -> None:
-    """
-    Create database tables for the MVP.
-
-    For now, we use SQLAlchemy create_all for local MVP development.
-    Later, we can replace this with Alembic migrations.
-    """
     from app.models.chat_message import ChatMessage  # noqa: F401
+    from app.models.daily_summary import DailySummarySetting  # noqa: F401
     from app.models.personal_memory import PersonalMemory  # noqa: F401
     from app.models.reminder import Reminder  # noqa: F401
     from app.models.study import StudyPlan, StudyTask  # noqa: F401

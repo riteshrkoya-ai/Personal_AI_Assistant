@@ -13,6 +13,9 @@ from app.bot.api_client import (
     list_reminders_api,
     list_study_plans_api,
     list_study_tasks_api,
+    disable_daily_summary_setting_api,
+    get_daily_summary_api,
+    update_daily_summary_setting_api,
 )
 from app.bot.auth import is_authorized, send_unauthorized_callback
 from app.bot.formatters import (
@@ -46,6 +49,8 @@ from app.bot.keyboards import (
     reminder_time_keyboard,
     study_menu_keyboard,
     study_reminder_time_keyboard,
+    daily_summary_menu_keyboard,
+    daily_summary_time_keyboard,
 )
 from app.bot.state import clear_active_flow
 from app.core.config import get_settings
@@ -110,11 +115,71 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if data == "menu:summary":
-        summary = await get_daily_summary_api(chat_id)
-        summary_text = summary.get("summary_text", "I could not build a daily summary.")
+        clear_active_flow(context)
+        await query.edit_message_text(
+            "Daily Summary options:",
+            reply_markup=daily_summary_menu_keyboard(),
+        )
+        return
+    if data == "summary:view":
+        try:
+            summary = await get_daily_summary_api(chat_id)
+            summary_text = summary.get("summary_text", "I could not build a daily summary.")
+
+            await query.edit_message_text(
+                summary_text,
+                reply_markup=back_to_main_keyboard(),
+            )
+        except Exception as exc:
+            await query.edit_message_text(
+                "I could not generate the daily summary right now.\n\n"
+            f"Technical detail: {type(exc).__name__}: {exc}",
+                reply_markup=back_to_main_keyboard(),
+            )
+        return
+
+
+    if data == "summary:enable_menu":
+        await query.edit_message_text(
+            "What time should I send your daily summary?",
+            reply_markup=daily_summary_time_keyboard(),
+        )
+        return
+
+
+    if data.startswith("summary_time:"):
+        parts = data.split(":")
+
+        if len(parts) != 3:
+            await query.edit_message_text(
+                "I could not understand that summary time.",
+                reply_markup=back_to_main_keyboard(),
+            )
+            return
+
+        hour = int(parts[1])
+        minute = int(parts[2])
+
+        result = await update_daily_summary_setting_api(
+            chat_id=chat_id,
+            hour=hour,
+            minute=minute,
+        )
 
         await query.edit_message_text(
-            summary_text,
+            "Daily summary scheduled.\n\n"
+            f"Time: {hour:02d}:{minute:02d}\n"
+            f"Timezone: {result.get('timezone', 'America/New_York')}",
+            reply_markup=back_to_main_keyboard(),
+        )
+        return
+
+
+    if data == "summary:disable":
+        await disable_daily_summary_setting_api(chat_id)
+
+        await query.edit_message_text(
+            "Daily summary turned off.",
             reply_markup=back_to_main_keyboard(),
         )
         return

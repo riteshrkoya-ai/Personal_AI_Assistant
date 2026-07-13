@@ -12,6 +12,7 @@ from telegram.ext import (
 
 from app.bot.handlers.chat import handle_text_message
 from app.bot.handlers.core import help_command, id_command, menu_command, start_command
+from app.bot.handlers.daily_summary import send_due_daily_summaries_job
 from app.bot.handlers.memory import (
     forget_command,
     memories_command,
@@ -101,9 +102,20 @@ def main() -> None:
             first=10,
             name="send_due_reminders",
         )
+
+        application.job_queue.run_repeating(
+            send_due_daily_summaries_job,
+            interval=60,
+            first=20,
+            name="send_due_daily_summaries",
+        )
+
         logger.info("Reminder scheduler job registered.")
+        logger.info("Daily summary scheduler job registered.")
     else:
-        logger.warning("Telegram job queue is not available. Reminder scheduler disabled.")
+        logger.warning(
+            "Telegram job queue is not available. Scheduled jobs disabled."
+        )
 
     logger.info("Starting Telegram polling worker...")
     application.run_polling(drop_pending_updates=True)

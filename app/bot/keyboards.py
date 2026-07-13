@@ -323,3 +323,34 @@ def study_reminder_time_keyboard(study_plan_id: int) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+def daily_summary_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("View Today's Summary", callback_data="summary:view"),
+            ],
+            [
+                InlineKeyboardButton("Turn On Daily Summary", callback_data="summary:enable_menu"),
+                InlineKeyboardButton("Turn Off Daily Summary", callback_data="summary:disable"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="menu:main"),
+            ],
+        ]
+    )
+
+
+def daily_summary_time_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("8 AM", callback_data="summary_time:8:0"),
+                InlineKeyboardButton("6 PM", callback_data="summary_time:18:0"),
+                InlineKeyboardButton("9 PM", callback_data="summary_time:21:0"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="menu:summary"),
+            ],
+        ]
+    )

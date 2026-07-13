@@ -195,3 +195,46 @@ async def get_daily_summary_api(chat_id: int) -> dict:
             "telegram_chat_id": chat_id,
         },
     )
+
+async def update_daily_summary_setting_api(
+    chat_id: int,
+    hour: int,
+    minute: int = 0,
+) -> dict:
+    return await post_to_backend(
+        "/daily-summary/settings",
+        {
+            "telegram_chat_id": chat_id,
+            "hour": hour,
+            "minute": minute,
+        },
+    )
+
+
+async def disable_daily_summary_setting_api(chat_id: int) -> dict:
+    return await post_to_backend(
+        "/daily-summary/settings/disable",
+        {
+            "telegram_chat_id": chat_id,
+        },
+    )
+
+
+async def list_due_daily_summaries_api(limit: int = 50) -> list[dict]:
+    data = await post_to_backend(
+        "/daily-summary/due",
+        {
+            "limit": limit,
+        },
+    )
+    return data.get("due_summaries", [])
+
+
+async def mark_daily_summary_sent_api(setting_id: int) -> bool:
+    data = await post_to_backend(
+        "/daily-summary/mark-sent",
+        {
+            "setting_id": setting_id,
+        },
+    )
+    return bool(data.get("marked"))

@@ -1,5 +1,7 @@
 from datetime import datetime, time
+from datetime import date
 from zoneinfo import ZoneInfo
+
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.personal_memory import PersonalMemory
 from app.models.reminder import Reminder
 from app.models.study import StudyPlan, StudyTask
-
+from app.models.daily_summary import DailySummarySetting
+from app.models.user import User
 
 def _clip_text(text: str, limit: int = 80) -> str:
     clean_text = " ".join((text or "").split()).strip()
@@ -225,3 +228,144 @@ def format_daily_summary_text(
     lines.append(f"Timezone: {timezone_name}")
 
     return "\n".join(lines)
+
+async def get_or_create_daily_summary_setting(
+    session: AsyncSession,
+    user_id: int,
+    timezone_name: str,
+) -> DailySummarySetting:
+    result = await session.execute(
+        select(DailySummarySetting).where(
+            DailySummarySetting.user_id == user_id,
+        )
+    )
+
+    setting = result.scalar_one_or_none()
+
+    if setting:
+        return setting
+
+    setting = DailySummarySetting(
+        user_id=user_id,
+        is_enabled=False,
+        hour=20,
+        minute=0,
+        timezone=timezone_name,
+    )
+
+    session.add(setting)
+    await session.flush()
+
+    return setting
+
+
+async def update_daily_summary_setting(
+    session: AsyncSession,
+    user_id: int,
+    hour: int,
+    minute: int,
+    timezone_name: str,
+) -> DailySummarySetting:
+    if hour < 0 or hour > 23:
+        raise ValueError("Hour must be between 0 and 23.")
+
+    if minute < 0 or minute > 59:
+        raise ValueError("Minute must be between 0 and 59.")
+
+    setting = await get_or_create_daily_summary_setting(
+        session=session,
+        user_id=user_id,
+        timezone_name=timezone_name,
+    )
+
+    setting.is_enabled = True
+    setting.hour = hour
+    setting.minute = minute
+    setting.timezone = timezone_name
+
+    await session.flush()
+
+    return setting
+
+
+async def disable_daily_summary_setting(
+    session: AsyncSession,
+    user_id: int,
+    timezone_name: str,
+) -> DailySummarySetting:
+    setting = await get_or_create_daily_summary_setting(
+        session=session,
+        user_id=user_id,
+        timezone_name=timezone_name,
+    )
+
+    setting.is_enabled = False
+
+    await session.flush()
+
+    return setting
+
+
+async def list_due_daily_summary_settings(
+    session: AsyncSession,
+    now_utc: datetime,
+    limit: int = 50,
+) -> list[tuple[DailySummarySetting, int]]:
+    result = await session.execute(
+        select(DailySummarySetting, User.telegram_chat_id)
+        .join(User, User.id == DailySummarySetting.user_id)
+        .where(
+            DailySummarySetting.is_enabled.is_(True),
+            User.telegram_chat_id.is_not(None),
+        )
+        .limit(limit)
+    )
+
+    rows = result.all()
+    due_items: list[tuple[DailySummarySetting, int]] = []
+
+    for setting, telegram_chat_id in rows:
+        timezone_obj = ZoneInfo(setting.timezone)
+        local_now = now_utc.astimezone(timezone_obj)
+        local_today = local_now.date()
+
+        scheduled_today = datetime(
+            year=local_now.year,
+            month=local_now.month,
+            day=local_now.day,
+            hour=setting.hour,
+            minute=setting.minute,
+            second=0,
+            microsecond=0,
+            tzinfo=timezone_obj,
+        )
+
+        already_sent_today = setting.last_sent_date == local_today
+
+        if local_now >= scheduled_today and not already_sent_today:
+            due_items.append((setting, telegram_chat_id))
+
+    return due_items
+
+
+async def mark_daily_summary_sent(
+    session: AsyncSession,
+    setting_id: int,
+    sent_date: date,
+) -> bool:
+    result = await session.execute(
+        select(DailySummarySetting).where(
+            DailySummarySetting.id == setting_id,
+        )
+    )
+
+    setting = result.scalar_one_or_none()
+
+    if not setting:
+        return False
+
+    setting.last_sent_date = sent_date
+
+    await session.flush()
+
+    return True
