@@ -3,10 +3,7 @@ from zoneinfo import ZoneInfo
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
-from app.bot.handlers.study import (
-    cancel_selected_study_plan,
-    complete_selected_study_task,
-)
+
 from app.bot.api_client import (
     cancel_reminder_api,
     create_reminder_api,
@@ -25,6 +22,11 @@ from app.bot.formatters import (
     format_study_tasks,
 )
 from app.bot.handlers.reminders import get_quick_reminder_time, get_selected_reminder_day
+from app.bot.handlers.study import (
+    cancel_selected_study_plan,
+    complete_selected_study_task,
+    create_selected_study_reminders,
+)
 from app.bot.keyboards import (
     back_to_main_keyboard,
     back_to_memory_keyboard,
@@ -42,6 +44,7 @@ from app.bot.keyboards import (
     reminder_minute_keyboard,
     reminder_time_keyboard,
     study_menu_keyboard,
+    study_reminder_time_keyboard,
 )
 from app.bot.state import clear_active_flow
 from app.core.config import get_settings
@@ -152,7 +155,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_markup=complete_study_task_keyboard(tasks),
         )
         return
-    
+
     if data == "study:cancel_menu":
         study_plans = await list_study_plans_api(chat_id)
 
@@ -187,6 +190,88 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             await query.edit_message_text(
                 "I could not find that active study plan.",
+                reply_markup=back_to_study_keyboard(),
+            )
+        return
+
+    if data.startswith("study_complete:"):
+        task_id = int(data.split(":", 1)[1])
+        completed = await complete_selected_study_task(
+            chat_id=chat_id,
+            task_id=task_id,
+        )
+
+        if completed:
+            tasks = await list_study_tasks_api(chat_id)
+            await query.edit_message_text(
+                "Study task completed.\n\n"
+                f"{format_study_tasks(tasks)}",
+                reply_markup=complete_study_task_keyboard(tasks),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that pending study task.",
+                reply_markup=back_to_study_keyboard(),
+            )
+        return
+
+    if data.startswith("study_reminder_yes:"):
+        study_plan_id = int(data.split(":", 1)[1])
+
+        await query.edit_message_text(
+            "What time should I remind you each day?",
+            reply_markup=study_reminder_time_keyboard(study_plan_id),
+        )
+        return
+
+    if data == "study_reminder_no":
+        await query.edit_message_text(
+            "No study reminders added.",
+            reply_markup=back_to_study_keyboard(),
+        )
+        return
+
+    if data.startswith("study_reminder_time:"):
+        parts = data.split(":")
+
+        if len(parts) != 4:
+            await query.edit_message_text(
+                "I could not understand that reminder time.",
+                reply_markup=back_to_study_keyboard(),
+            )
+            return
+
+        try:
+            study_plan_id = int(parts[1])
+            hour = int(parts[2])
+            minute = int(parts[3])
+        except ValueError:
+            await query.edit_message_text(
+                "I could not understand that reminder time.",
+                reply_markup=back_to_study_keyboard(),
+            )
+            return
+
+        result = await create_selected_study_reminders(
+            chat_id=chat_id,
+            study_plan_id=study_plan_id,
+            hour=hour,
+            minute=minute,
+        )
+
+        if result.get("created"):
+            await query.edit_message_text(
+                "Study reminders created.\n\n"
+                f"Reminder count: {result.get('reminder_count', 0)}\n"
+                f"Time: {hour:02d}:{minute:02d}",
+                reply_markup=back_to_study_keyboard(),
+            )
+        else:
+            await query.edit_message_text(
+                result.get(
+                    "message",
+                    "I could not create study reminders for this plan.",
+                ),
                 reply_markup=back_to_study_keyboard(),
             )
         return
@@ -465,25 +550,4 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "Cancelled.",
             reply_markup=main_menu_keyboard(),
         )
-        return
-    
-    if data.startswith("study_complete:"):
-        task_id = int(data.split(":", 1)[1])
-        completed = await complete_selected_study_task(
-            chat_id=chat_id,
-            task_id=task_id,
-        )
-
-        if completed:
-            tasks = await list_study_tasks_api(chat_id)
-            await query.edit_message_text(
-                "Study task completed.\n\n"
-                f"{format_study_tasks(tasks)}",
-                reply_markup=complete_study_task_keyboard(tasks),
-            )
-        else:
-            await query.edit_message_text(
-                "I could not find that pending study task.",
-                reply_markup=back_to_study_keyboard(),
-            )
         return

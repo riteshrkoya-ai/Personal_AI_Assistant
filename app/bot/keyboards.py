@@ -274,3 +274,52 @@ def cancel_study_plan_keyboard(study_plans: list[dict]) -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton("Study Menu", callback_data="menu:study")])
 
     return InlineKeyboardMarkup(rows)
+
+def study_reminder_prompt_keyboard(study_plan_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "Yes, remind me",
+                    callback_data=f"study_reminder_yes:{study_plan_id}",
+                ),
+                InlineKeyboardButton(
+                    "No",
+                    callback_data="study_reminder_no",
+                ),
+            ],
+            [
+                InlineKeyboardButton("Study Menu", callback_data="menu:study"),
+            ],
+        ]
+    )
+
+
+def study_reminder_time_keyboard(study_plan_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "9 AM",
+                    callback_data=f"study_reminder_time:{study_plan_id}:9:0",
+                ),
+                InlineKeyboardButton(
+                    "6 PM",
+                    callback_data=f"study_reminder_time:{study_plan_id}:18:0",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "8 PM",
+                    callback_data=f"study_reminder_time:{study_plan_id}:20:0",
+                ),
+                InlineKeyboardButton(
+                    "No reminders",
+                    callback_data="study_reminder_no",
+                ),
+            ],
+            [
+                InlineKeyboardButton("Study Menu", callback_data="menu:study"),
+            ],
+        ]
+    )

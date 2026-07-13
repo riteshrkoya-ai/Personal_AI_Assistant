@@ -7,10 +7,15 @@ from app.bot.api_client import (
     cancel_study_plan_api,
     complete_study_task_api,
     create_study_plan_api,
+    create_study_plan_reminders_api,
     list_study_tasks_api,
 )
 from app.bot.formatters import format_study_tasks
-from app.bot.keyboards import back_to_study_keyboard, complete_study_task_keyboard
+from app.bot.keyboards import (
+    back_to_study_keyboard,
+    complete_study_task_keyboard,
+    study_reminder_prompt_keyboard,
+)
 from app.bot.state import clear_active_flow
 
 
@@ -103,17 +108,30 @@ async def handle_study_goal_flow(
         )
 
         tasks = data.get("tasks", [])
+        study_plan = data.get("study_plan", {})
+        study_plan_id = study_plan.get("id")
 
         clear_active_flow(context)
 
-        await update.message.reply_text(
+        message = (
             "Study plan created.\n\n"
             f"Topic: {topic}\n"
             f"Duration: {days} day(s)\n"
             f"Goal: {goal if goal else 'Not provided'}\n\n"
-            f"{format_study_tasks(tasks)}",
-            reply_markup=back_to_study_keyboard(),
+            f"{format_study_tasks(tasks)}"
         )
+
+        if study_plan_id:
+            await update.message.reply_text(
+                f"{message}\n\n"
+                "Do you want daily reminders for this study plan?",
+                reply_markup=study_reminder_prompt_keyboard(study_plan_id),
+            )
+        else:
+            await update.message.reply_text(
+                message,
+                reply_markup=back_to_study_keyboard(),
+            )
 
     except Exception as exc:
         logger.exception("Guided study plan creation failed")
@@ -142,6 +160,7 @@ async def show_study_tasks_with_complete_buttons(
         reply_markup=complete_study_task_keyboard(tasks),
     )
 
+
 async def cancel_selected_study_plan(
     chat_id: int,
     study_plan_id: int,
@@ -149,4 +168,18 @@ async def cancel_selected_study_plan(
     return await cancel_study_plan_api(
         chat_id=chat_id,
         study_plan_id=study_plan_id,
+    )
+
+
+async def create_selected_study_reminders(
+    chat_id: int,
+    study_plan_id: int,
+    hour: int,
+    minute: int,
+) -> dict:
+    return await create_study_plan_reminders_api(
+        chat_id=chat_id,
+        study_plan_id=study_plan_id,
+        hour=hour,
+        minute=minute,
     )
