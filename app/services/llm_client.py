@@ -1,8 +1,28 @@
+import logging
+
 from litellm import acompletion
 
 from app.core.config import get_settings
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+async def warm_up_model() -> None:
+    """
+    Send a throwaway prompt to Ollama on startup so the model is already
+    loaded into memory before the first real user message arrives.
+    """
+    try:
+        await acompletion(
+            model=f"ollama/{settings.ollama_model}",
+            api_base=settings.ollama_base_url,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=1,
+        )
+        logger.info("Ollama model %s warmed up successfully", settings.ollama_model)
+    except Exception:
+        logger.exception("Ollama model warm-up failed")
 
 
 def build_memory_context(memories: list[str] | None) -> str:

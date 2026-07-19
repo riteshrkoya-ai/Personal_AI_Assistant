@@ -110,7 +110,7 @@ async def remember_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=240.0) as client:
             response = await client.post(
                 f"{settings.api_base_url}/memory",
                 json={
@@ -156,7 +156,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("Thinking...")
 
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=240.0) as client:
             response = await client.post(
                 f"{settings.api_base_url}/chat",
                 json={
