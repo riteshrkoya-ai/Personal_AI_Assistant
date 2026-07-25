@@ -1,6 +1,9 @@
 from litellm import acompletion
 
 from app.core.config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -70,7 +73,7 @@ async def generate_chat_response(
                 },
             ],
             temperature=0.2,
-            max_tokens=80,
+            max_tokens=256,
         )
 
         return response.choices[0].message.content or "I could not generate a response."
@@ -80,3 +83,21 @@ async def generate_chat_response(
             "I could not reach the local LLM right now. "
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
+
+async def warm_up_model() -> None:
+    try:
+        await acompletion(
+            model=f"ollama/{settings.ollama_model}",
+            api_base=settings.ollama_base_url,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "hi",
+                }
+            ],
+            temperature=0,
+            max_tokens=1,
+        )
+        logger.info("Ollama model warm-up completed.")
+    except Exception:
+        logger.exception("Ollama model warm-up failed.")
