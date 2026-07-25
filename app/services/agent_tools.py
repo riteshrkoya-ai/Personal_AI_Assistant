@@ -17,6 +17,10 @@ from app.services.study_service import create_study_plan
 settings = get_settings()
 
 
+def normalize_memory_text(value: str) -> str:
+    return " ".join((value or "").lower().strip().rstrip(".").split())
+
+
 AGENT_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -233,6 +237,31 @@ async def execute_agent_tool(
     if tool_name == "save_memory":
         content = str(args.get("content", "")).strip()
 
+        if not content:
+            raise ValueError("Memory content cannot be empty.")
+
+        existing_memories = await search_user_memories(
+            session=session,
+            user_id=user_id,
+            query=content,
+            top_k=5,
+        )
+
+        normalized_content = normalize_memory_text(content)
+
+        for existing_memory in existing_memories:
+            if normalize_memory_text(existing_memory.content) == normalized_content:
+                return {
+                    "tool": tool_name,
+                    "success": True,
+                    "duplicate": True,
+                    "memory": {
+                        "id": existing_memory.id,
+                        "content": existing_memory.content,
+                        "source": existing_memory.source,
+                    },
+                }
+
         memory = await create_memory(
             session=session,
             user_id=user_id,
@@ -243,6 +272,7 @@ async def execute_agent_tool(
         return {
             "tool": tool_name,
             "success": True,
+            "duplicate": False,
             "memory": {
                 "id": memory.id,
                 "content": memory.content,
@@ -279,6 +309,9 @@ async def execute_agent_tool(
         message = str(args.get("message", "")).strip()
         scheduled_time_iso = str(args.get("scheduled_time_iso", "")).strip()
         scheduled_time = parse_agent_datetime(scheduled_time_iso)
+
+        if not message:
+            raise ValueError("Reminder message cannot be empty.")
 
         reminder = await create_reminder(
             session=session,
@@ -345,6 +378,9 @@ async def execute_agent_tool(
         goal = str(goal_value).strip() if goal_value else None
         days = int(args.get("days", 5))
 
+        if not topic:
+            raise ValueError("Study topic cannot be empty.")
+
         study_plan, tasks = await create_study_plan(
             session=session,
             user_id=user_id,
@@ -381,6 +417,9 @@ async def execute_agent_tool(
         description_value = args.get("description")
         description = str(description_value).strip() if description_value else None
         target_weeks = int(args.get("target_weeks", 4))
+
+        if not title:
+            raise ValueError("Future Me goal title cannot be empty.")
 
         goal = await create_future_me_goal(
             session=session,

@@ -2,9 +2,9 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.core.database import AsyncSessionLocal
+from app.services.agent_service import run_agent
 from app.services.chat_history_service import save_chat_message
 from app.services.llm_client import generate_chat_response
-from app.services.memory_service import search_user_memories
 from app.services.user_service import get_or_create_telegram_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -13,6 +13,9 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     telegram_chat_id: int | None = None
+    telegram_username: str | None = None
+    telegram_first_name: str | None = None
+    telegram_last_name: str | None = None
     source: str = "api"
 
 
@@ -25,7 +28,6 @@ class ChatResponse(BaseModel):
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     user_id: int | None = None
-    memory_texts: list[str] = []
 
     async with AsyncSessionLocal() as session:
         if request.telegram_chat_id is not None:
@@ -44,32 +46,33 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 source=request.source,
             )
 
-            relevant_memories = await search_user_memories(
+            agent_result = await run_agent(
                 session=session,
                 user_id=user.id,
-                query=request.message,
+                user_message=request.message,
             )
 
-            memory_texts = [memory.content for memory in relevant_memories]
+            assistant_response = agent_result["final_response"]
 
-            await session.commit()
-
-    assistant_response = await generate_chat_response(
-        user_message=request.message,
-        memories=memory_texts,
-    )
-
-    if user_id is not None:
-        async with AsyncSessionLocal() as session:
             await save_chat_message(
                 session=session,
-                user_id=user_id,
+                user_id=user.id,
                 role="assistant",
                 content=assistant_response,
                 source=request.source,
             )
 
             await session.commit()
+
+            return ChatResponse(
+                response=assistant_response,
+                user_id=user_id,
+                source=request.source,
+            )
+
+    assistant_response = await generate_chat_response(
+        user_message=request.message,
+    )
 
     return ChatResponse(
         response=assistant_response,
