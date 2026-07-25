@@ -1,16 +1,18 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.api.chat import router as chat_router
 from app.api.daily_summary import router as daily_summary_router
+from app.api.future_me import router as future_me_router
 from app.api.health import router as health_router
 from app.api.memory import router as memory_router
 from app.api.reminders import router as reminders_router
 from app.api.study import router as study_router
 from app.core.config import get_settings
 from app.core.database import create_database_tables
-from app.api.future_me import router as future_me_router
+from app.services.llm_client import warm_up_model
 
 settings = get_settings()
 
@@ -18,6 +20,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_database_tables()
+    asyncio.create_task(warm_up_model())
     yield
 
 
