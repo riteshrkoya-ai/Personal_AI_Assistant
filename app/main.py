@@ -13,6 +13,7 @@ from app.api.study import router as study_router
 from app.core.config import get_settings
 from app.core.database import create_database_tables
 from app.services.llm_client import warm_up_model
+from app.api.agent import router as agent_router
 
 settings = get_settings()
 
@@ -32,6 +33,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(agent_router)
 app.include_router(chat_router)
 app.include_router(memory_router)
 app.include_router(reminders_router)
