@@ -207,6 +207,30 @@ def _extract_memory_query(message: str) -> str:
     return query or clean_message
 
 
+def _format_datetime_for_user(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo(settings.timezone))
+
+        local_time = parsed.astimezone(ZoneInfo(settings.timezone))
+
+        hour = local_time.strftime("%I").lstrip("0") or "12"
+        minute = local_time.strftime("%M")
+        am_pm = local_time.strftime("%p")
+
+        return (
+            f"{local_time.strftime('%b')} "
+            f"{local_time.day}, "
+            f"{local_time.year} "
+            f"at {hour}:{minute} {am_pm}"
+        )
+
+    except Exception:
+        return value
+
+
 def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
     clean_message = " ".join(message.split()).strip()
     lower_message = clean_message.lower()
@@ -285,6 +309,8 @@ def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
         "",
         message_part,
     ).strip()
+
+    message_part = message_part.strip(" .")
 
     if not message_part:
         message_part = "Reminder"
@@ -409,6 +435,11 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
     if tool_name == "save_memory":
         memory = first_result.get("memory", {})
         content = memory.get("content", "that")
+        duplicate = first_result.get("duplicate") is True
+
+        if duplicate:
+            return f"I already had this memory saved: {content}"
+
         return f"Got it — I saved this memory: {content}"
 
     if tool_name == "search_memory":
@@ -417,11 +448,25 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
         if not memories:
             return "I did not find any matching memories."
 
-        memory_lines = [
-            f"- {memory.get('content')}"
-            for memory in memories
-            if memory.get("content")
-        ]
+        seen_contents: set[str] = set()
+        memory_lines: list[str] = []
+
+        for memory in memories:
+            content = memory.get("content")
+
+            if not content:
+                continue
+
+            normalized_content = " ".join(content.lower().strip().rstrip(".").split())
+
+            if normalized_content in seen_contents:
+                continue
+
+            seen_contents.add(normalized_content)
+            memory_lines.append(f"- {content}")
+
+        if not memory_lines:
+            return "I did not find any matching memories."
 
         return "Here is what I found in your memory:\n" + "\n".join(memory_lines)
 
@@ -429,7 +474,9 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
         reminder = first_result.get("reminder", {})
         message = reminder.get("message", "your reminder")
         scheduled_time = reminder.get("scheduled_time", "")
-        return f"Done — I created the reminder: {message} at {scheduled_time}"
+        readable_time = _format_datetime_for_user(scheduled_time)
+
+        return f"Done — I created the reminder: {message} for {readable_time}."
 
     if tool_name == "list_reminders":
         reminders = first_result.get("reminders", [])
@@ -438,7 +485,10 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
             return "You do not have any pending reminders."
 
         reminder_lines = [
-            f"- {reminder.get('scheduled_time')}: {reminder.get('message')}"
+            (
+                f"- {_format_datetime_for_user(reminder.get('scheduled_time', ''))}: "
+                f"{reminder.get('message')}"
+            )
             for reminder in reminders
         ]
 
