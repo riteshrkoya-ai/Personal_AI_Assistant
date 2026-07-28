@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,8 @@ from app.services.agent_tools import AGENT_TOOL_SCHEMAS, execute_agent_tool
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+PENDING_REMINDER_REQUESTS: dict[int, dict[str, Any]] = {}
 
 
 def _message_content(response: Any) -> str:
@@ -231,60 +233,162 @@ def _format_datetime_for_user(value: str) -> str:
         return value
 
 
-def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
-    clean_message = " ".join(message.split()).strip()
-    lower_message = clean_message.lower()
-
-    if "remind me" not in lower_message:
-        return None
-
-    timezone = ZoneInfo(settings.timezone)
-    now = datetime.now(timezone)
-
-    day_offset: int | None = None
+def _extract_date_from_text(
+    message: str,
+    now: datetime,
+) -> tuple[Any | None, bool]:
+    lower_message = message.lower()
 
     if "tomorrow" in lower_message:
-        day_offset = 1
-    elif "today" in lower_message:
-        day_offset = 0
+        return (now + timedelta(days=1)).date(), True
 
-    time_match = re.search(
-        r"\b(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b",
+    if "today" in lower_message:
+        return now.date(), True
+
+    date_match = re.search(
+        r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b",
         lower_message,
     )
 
-    if day_offset is None or not time_match:
-        return {
-            "response_type": "final",
-            "final_response": "What date and time should I set the reminder for?",
-            "tool_calls": [],
-        }
+    if not date_match:
+        return None, False
 
-    hour = int(time_match.group(2))
-    minute = int(time_match.group(3) or 0)
-    meridiem = time_match.group(4)
+    month = int(date_match.group(1))
+    day = int(date_match.group(2))
+    year_text = date_match.group(3)
 
-    if meridiem == "pm" and hour != 12:
-        hour += 12
+    if year_text:
+        year = int(year_text)
+        if year < 100:
+            year += 2000
+    else:
+        year = now.year
 
-    if meridiem == "am" and hour == 12:
-        hour = 0
+    try:
+        parsed_date = datetime(year, month, day).date()
+    except ValueError:
+        return None, False
 
-    scheduled_time = (now + timedelta(days=day_offset)).replace(
-        hour=hour,
-        minute=minute,
-        second=0,
-        microsecond=0,
+    return parsed_date, True
+
+
+def _extract_time_from_text(
+    message: str,
+    default_meridiem: str | None = None,
+) -> tuple[int | None, int | None, str | None, str | None]:
+    lower_message = message.lower()
+
+    time_match = re.search(
+        r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b",
+        lower_message,
+    )
+
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2) or 0)
+        meridiem = time_match.group(3)
+
+        if hour < 1 or hour > 12 or minute < 0 or minute > 59:
+            return None, None, None, "Please provide a valid reminder time."
+
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+
+        if meridiem == "am" and hour == 12:
+            hour = 0
+
+        return hour, minute, meridiem, None
+
+    no_meridiem_match = re.search(
+        r"\b(?:at\s+)?(\d{1,2}):(\d{2})\b",
+        lower_message,
+    )
+
+    if not no_meridiem_match:
+        return None, None, None, "What time should I set the reminder for?"
+
+    hour = int(no_meridiem_match.group(1))
+    minute = int(no_meridiem_match.group(2))
+
+    if minute < 0 or minute > 59:
+        return None, None, None, "Please provide a valid reminder time."
+
+    if hour > 12:
+        if hour > 23:
+            return None, None, None, "Please provide a valid reminder time."
+
+        return hour, minute, None, None
+
+    if default_meridiem:
+        meridiem = default_meridiem
+
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+
+        if meridiem == "am" and hour == 12:
+            hour = 0
+
+        return hour, minute, meridiem, None
+
+    return None, None, None, "Is that AM or PM?"
+
+
+def _build_scheduled_time_from_text(
+    message: str,
+    default_meridiem: str | None = None,
+) -> tuple[datetime | None, str | None, str | None]:
+    timezone = ZoneInfo(settings.timezone)
+    now = datetime.now(timezone)
+
+    scheduled_date, date_was_explicit = _extract_date_from_text(
+        message=message,
+        now=now,
+    )
+
+    hour, minute, meridiem, time_error = _extract_time_from_text(
+        message=message,
+        default_meridiem=default_meridiem,
+    )
+
+    if time_error:
+        return None, time_error, meridiem
+
+    if hour is None or minute is None:
+        return None, "What time should I set the reminder for?", meridiem
+
+    if scheduled_date is None:
+        scheduled_time = datetime.combine(
+            now.date(),
+            time(hour=hour, minute=minute),
+            tzinfo=timezone,
+        )
+
+        if scheduled_time <= now:
+            scheduled_time = scheduled_time + timedelta(days=1)
+
+        return scheduled_time, None, meridiem
+
+    scheduled_time = datetime.combine(
+        scheduled_date,
+        time(hour=hour, minute=minute),
+        tzinfo=timezone,
     )
 
     if scheduled_time <= now:
-        return {
-            "response_type": "final",
-            "final_response": "That reminder time has already passed. What future time should I use?",
-            "tool_calls": [],
-        }
+        if date_was_explicit:
+            return (
+                None,
+                "That reminder time has already passed. What future time should I use?",
+                meridiem,
+            )
 
-    message_part = clean_message
+        scheduled_time = scheduled_time + timedelta(days=1)
+
+    return scheduled_time, None, meridiem
+
+
+def _extract_reminder_message(message: str) -> str:
+    message_part = " ".join(message.split()).strip()
 
     message_part = re.sub(
         r"(?i)^remind me\s+",
@@ -299,7 +403,19 @@ def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
     ).strip()
 
     message_part = re.sub(
-        r"(?i)\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)\b",
+        r"(?i)\b(on\s+)?\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
+        "",
+        message_part,
+    ).strip()
+
+    message_part = re.sub(
+        r"(?i)\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b",
+        "",
+        message_part,
+    ).strip()
+
+    message_part = re.sub(
+        r"(?i)\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
         "",
         message_part,
     ).strip()
@@ -310,10 +426,137 @@ def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
         message_part,
     ).strip()
 
-    message_part = message_part.strip(" .")
+    message_part = re.sub(
+        r"(?i)\b(and|on|at)\b$",
+        "",
+        message_part,
+    ).strip()
 
-    if not message_part:
-        message_part = "Reminder"
+    return message_part.strip(" .")
+
+
+def _contains_date_or_time(message: str) -> bool:
+    lower_message = message.lower()
+
+    has_date_word = "today" in lower_message or "tomorrow" in lower_message
+    has_date_number = re.search(
+        r"\b\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
+        lower_message,
+    )
+    has_time = re.search(
+        r"\b(?:at\s+)?\d{1,2}(:\d{2})?\s*(am|pm)\b",
+        lower_message,
+    ) or re.search(
+        r"\b(?:at\s+)?\d{1,2}:\d{2}\b",
+        lower_message,
+    )
+
+    return bool(has_date_word or has_date_number or has_time)
+
+
+def _looks_like_standalone_datetime(message: str) -> bool:
+    lower_message = " ".join(message.lower().split()).strip()
+
+    if not _contains_date_or_time(lower_message):
+        return False
+
+    if "remind" in lower_message or "remember" in lower_message:
+        return False
+
+    remaining = lower_message
+
+    remaining = re.sub(
+        r"\b(today|tomorrow)\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(
+        r"\b(on\s+)?\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(
+        r"\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(
+        r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(
+        r"\b\d{1,2}:\d{2}\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(
+        r"\b(and|at|on|for)\b",
+        " ",
+        remaining,
+    )
+
+    remaining = re.sub(r"[^a-z0-9]+", " ", remaining).strip()
+
+    return remaining == ""
+
+
+def _build_pending_reminder_plan(
+    user_id: int,
+    message: str,
+) -> dict[str, Any] | None:
+    pending_reminder = PENDING_REMINDER_REQUESTS.get(user_id)
+
+    if not pending_reminder:
+        return None
+
+    clean_message = " ".join(message.split()).strip()
+    lower_message = clean_message.lower()
+
+    if lower_message in {"cancel", "cancel reminder", "never mind", "nevermind"}:
+        PENDING_REMINDER_REQUESTS.pop(user_id, None)
+
+        return {
+            "response_type": "final",
+            "final_response": "Okay, I cancelled that pending reminder request.",
+            "tool_calls": [],
+        }
+
+    if not _contains_date_or_time(clean_message):
+        return None
+
+    scheduled_time, question, meridiem = _build_scheduled_time_from_text(
+        message=clean_message,
+        default_meridiem=pending_reminder.get("meridiem"),
+    )
+
+    if scheduled_time is None:
+        if meridiem:
+            pending_reminder["meridiem"] = meridiem
+
+        return {
+            "response_type": "final",
+            "final_response": question or "What date and time should I set the reminder for?",
+            "tool_calls": [],
+        }
+
+    reminder_message = str(pending_reminder.get("message") or "").strip()
+
+    if not reminder_message:
+        PENDING_REMINDER_REQUESTS.pop(user_id, None)
+
+        return {
+            "response_type": "final",
+            "final_response": "What should I remind you about?",
+            "tool_calls": [],
+        }
+
+    PENDING_REMINDER_REQUESTS.pop(user_id, None)
 
     return {
         "response_type": "tool_calls",
@@ -322,7 +565,7 @@ def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
             {
                 "tool_name": "create_reminder",
                 "arguments": {
-                    "message": message_part,
+                    "message": reminder_message,
                     "scheduled_time_iso": scheduled_time.isoformat(),
                 },
             }
@@ -330,9 +573,73 @@ def _parse_simple_reminder(message: str) -> dict[str, Any] | None:
     }
 
 
-def _deterministic_plan(message: str) -> dict[str, Any] | None:
+def _parse_simple_reminder(
+    message: str,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
+    clean_message = " ".join(message.split()).strip()
+    lower_message = clean_message.lower()
+
+    if "remind me" not in lower_message:
+        return None
+
+    reminder_message = _extract_reminder_message(clean_message)
+
+    scheduled_time, question, meridiem = _build_scheduled_time_from_text(
+        message=clean_message,
+    )
+
+    if not reminder_message and scheduled_time is not None:
+        return {
+            "response_type": "final",
+            "final_response": "What should I remind you about?",
+            "tool_calls": [],
+        }
+
+    if scheduled_time is None:
+        if user_id is not None and reminder_message:
+            PENDING_REMINDER_REQUESTS[user_id] = {
+                "message": reminder_message,
+                "created_at": datetime.now(ZoneInfo(settings.timezone)).isoformat(),
+                "meridiem": meridiem,
+            }
+
+        return {
+            "response_type": "final",
+            "final_response": question or "What date and time should I set the reminder for?",
+            "tool_calls": [],
+        }
+
+    return {
+        "response_type": "tool_calls",
+        "final_response": "",
+        "tool_calls": [
+            {
+                "tool_name": "create_reminder",
+                "arguments": {
+                    "message": reminder_message,
+                    "scheduled_time_iso": scheduled_time.isoformat(),
+                },
+            }
+        ],
+    }
+
+
+def _deterministic_plan(
+    message: str,
+    user_id: int | None = None,
+) -> dict[str, Any] | None:
     clean_message = " ".join((message or "").split()).strip()
     lower_message = clean_message.lower()
+
+    if user_id is not None:
+        pending_reminder_plan = _build_pending_reminder_plan(
+            user_id=user_id,
+            message=clean_message,
+        )
+
+        if pending_reminder_plan is not None:
+            return pending_reminder_plan
 
     if lower_message in {
         "what is rag?",
@@ -408,9 +715,20 @@ def _deterministic_plan(message: str) -> dict[str, Any] | None:
             ],
         }
 
-    reminder_plan = _parse_simple_reminder(clean_message)
+    reminder_plan = _parse_simple_reminder(
+        message=clean_message,
+        user_id=user_id,
+    )
+
     if reminder_plan is not None:
         return reminder_plan
+
+    if _looks_like_standalone_datetime(clean_message):
+        return {
+            "response_type": "final",
+            "final_response": "What should I remind you about?",
+            "tool_calls": [],
+        }
 
     return None
 
@@ -563,7 +881,10 @@ async def run_agent(
             "tool_results": [],
         }
 
-    deterministic_plan = _deterministic_plan(clean_message)
+    deterministic_plan = _deterministic_plan(
+        message=clean_message,
+        user_id=user_id,
+    )
 
     if deterministic_plan is not None:
         planner_output = deterministic_plan
