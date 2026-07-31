@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.agent_tools import AGENT_TOOL_SCHEMAS, execute_agent_tool
+from app.services.llm_client import get_llm_request_config
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -116,6 +117,7 @@ Important rules:
 - If the user asks what they should focus on today, use get_daily_summary.
 - If the user asks to create a study plan, use create_study_plan.
 - If the user asks to create a future goal, use create_future_me_goal.
+- If the user asks to create a future me weekly plan, use create_future_me_weekly_plan.
 - If a reminder request is missing a clear future date or time, do not call a tool. Ask one short clarification question.
 - For create_reminder, scheduled_time_iso must be a future ISO datetime with timezone.
 - The server injects user_id. Never ask for or generate user_id.
@@ -153,12 +155,14 @@ async def _call_llm(
     temperature: float = 0.1,
     max_tokens: int = 512,
 ) -> str:
+    model, provider_kwargs = get_llm_request_config()
+
     response = await acompletion(
-        model=f"ollama/{settings.ollama_model}",
-        api_base=settings.ollama_base_url,
+        model=model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        **provider_kwargs,
     )
 
     return _message_content(response)
