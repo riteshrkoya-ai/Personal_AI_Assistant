@@ -11,8 +11,18 @@ class Settings(BaseSettings):
 
     database_url: str
 
+    # LLM provider
+    # Local Docker: LLM_PROVIDER=ollama
+    # Render cloud: LLM_PROVIDER=gemini
+    llm_provider: str = "ollama"
+
+    # Ollama settings for local development
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = "llama3.2:3b"
+
+    # Gemini settings for Render/cloud deployment
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
 
     telegram_bot_token: str | None = None
     authorized_telegram_chat_ids: str | None = None

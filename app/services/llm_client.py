@@ -1,7 +1,8 @@
+import logging
+
 from litellm import acompletion
 
 from app.core.config import get_settings
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +23,61 @@ def build_memory_context(memories: list[str] | None) -> str:
     )
 
 
+def get_llm_request_config() -> tuple[str, dict]:
+    """
+    Return the LiteLLM model name and provider-specific keyword arguments.
+
+    Local Docker uses Ollama:
+        LLM_PROVIDER=ollama
+        OLLAMA_MODEL=llama3.2:3b
+        OLLAMA_BASE_URL=http://ollama:11434
+
+    Render/cloud uses Gemini:
+        LLM_PROVIDER=gemini
+        GEMINI_API_KEY=...
+        GEMINI_MODEL=gemini-2.5-flash
+    """
+    provider = settings.llm_provider.strip().lower()
+
+    if provider == "ollama":
+        return (
+            f"ollama/{settings.ollama_model}",
+            {
+                "api_base": settings.ollama_base_url,
+            },
+        )
+
+    if provider == "gemini":
+        if not settings.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+
+        gemini_model = settings.gemini_model.strip()
+
+        if not gemini_model.startswith("gemini/"):
+            gemini_model = f"gemini/{gemini_model}"
+
+        return (
+            gemini_model,
+            {
+                "api_key": settings.gemini_api_key,
+            },
+        )
+
+    raise ValueError(
+        f"Unsupported LLM_PROVIDER='{settings.llm_provider}'. "
+        "Supported values are: ollama, gemini."
+    )
+
+
 async def generate_chat_response(
     user_message: str,
     memories: list[str] | None = None,
 ) -> str:
     """
-    Generate a general assistant response using the configured Ollama model.
+    Generate a general assistant response using the configured LLM provider.
 
-    This is not full document RAG yet. For Phase 3, we can optionally pass
-    relevant user memories into the prompt.
+    Local development can use Ollama.
+    Render/cloud deployment can use Gemini.
     """
     memory_context = build_memory_context(memories)
 
@@ -59,9 +106,10 @@ async def generate_chat_response(
         system_prompt += "\n\n" + memory_context
 
     try:
+        model, provider_kwargs = get_llm_request_config()
+
         response = await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -74,21 +122,36 @@ async def generate_chat_response(
             ],
             temperature=0.2,
             max_tokens=256,
+            **provider_kwargs,
         )
 
         return response.choices[0].message.content or "I could not generate a response."
 
     except Exception as exc:
+        logger.exception("LLM response generation failed.")
         return (
-            "I could not reach the local LLM right now. "
+            "I could not reach the configured LLM right now. "
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
 
+
 async def warm_up_model() -> None:
+    """
+    Warm up the local Ollama model during local Docker startup.
+
+    For Gemini/cloud providers, we skip warm-up to avoid unnecessary API calls.
+    """
+    provider = settings.llm_provider.strip().lower()
+
+    if provider != "ollama":
+        logger.info("LLM warm-up skipped because provider is '%s'.", provider)
+        return
+
     try:
+        model, provider_kwargs = get_llm_request_config()
+
         await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -97,6 +160,7 @@ async def warm_up_model() -> None:
             ],
             temperature=0,
             max_tokens=1,
+            **provider_kwargs,
         )
         logger.info("Ollama model warm-up completed.")
     except Exception:
