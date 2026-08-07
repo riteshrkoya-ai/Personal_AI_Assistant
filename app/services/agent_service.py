@@ -715,6 +715,50 @@ def _deterministic_plan(
             ],
         }
 
+    if (
+        "daily summary" in lower_message
+        or "today summary" in lower_message
+        or "summary for today" in lower_message
+        or "summarize my day" in lower_message
+        or "what should i focus on today" in lower_message
+        or "what should i work on today" in lower_message
+        or "what do i need to do today" in lower_message
+        or "what is my plan today" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "get_daily_summary",
+                    "arguments": {},
+                }
+            ],
+        }
+
+    if (
+        "list reminders" in lower_message
+        or "show reminders" in lower_message
+        or "show my reminders" in lower_message
+        or "pending reminders" in lower_message
+        or lower_message == "my reminders"
+        or "what reminders do i have" in lower_message
+        or "what are my reminders" in lower_message
+        or "do i have any reminders" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "list_reminders",
+                    "arguments": {
+                        "limit": 20,
+                    },
+                }
+            ],
+        }
+
     reminder_plan = _parse_simple_reminder(
         message=clean_message,
         user_id=user_id,
