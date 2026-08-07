@@ -116,6 +116,11 @@ Important rules:
 - If the user asks what they should focus on today, use get_daily_summary.
 - If the user asks to create a study plan, use create_study_plan.
 - If the user asks to create a future goal, use create_future_me_goal.
+- If the user asks to create a Future Me weekly plan, use create_future_me_weekly_plan.
+- If the user asks to list study plans, use list_study_plans.
+- If the user asks to list study tasks, use list_study_tasks.
+- If the user asks to list Future Me goals, use list_future_me_goals.
+- If the user asks to list Future Me tasks, use list_future_me_tasks.
 - If a reminder request is missing a clear future date or time, do not call a tool. Ask one short clarification question.
 - For create_reminder, scheduled_time_iso must be a future ISO datetime with timezone.
 - The server injects user_id. Never ask for or generate user_id.
@@ -715,6 +720,98 @@ def _deterministic_plan(
             ],
         }
 
+    if (
+        "study plans" in lower_message
+        or "my study plans" in lower_message
+        or "show study plans" in lower_message
+        or "show my study plans" in lower_message
+        or "list study plans" in lower_message
+        or "list my study plans" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "list_study_plans",
+                    "arguments": {
+                        "status": "active",
+                        "limit": 20,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "study tasks" in lower_message
+        or "my study tasks" in lower_message
+        or "show study tasks" in lower_message
+        or "show my study tasks" in lower_message
+        or "list study tasks" in lower_message
+        or "list my study tasks" in lower_message
+        or "what study tasks do i have" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "list_study_tasks",
+                    "arguments": {
+                        "status": "pending",
+                        "limit": 20,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "future me goals" in lower_message
+        or "future goals" in lower_message
+        or "my future me goals" in lower_message
+        or "show future me goals" in lower_message
+        or "show my future me goals" in lower_message
+        or "list future me goals" in lower_message
+        or "list my future me goals" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "list_future_me_goals",
+                    "arguments": {
+                        "status": "active",
+                        "limit": 20,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "future me tasks" in lower_message
+        or "future tasks" in lower_message
+        or "my future me tasks" in lower_message
+        or "show future me tasks" in lower_message
+        or "show my future me tasks" in lower_message
+        or "list future me tasks" in lower_message
+        or "list my future me tasks" in lower_message
+        or "what future me tasks do i have" in lower_message
+    ):
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "list_future_me_tasks",
+                    "arguments": {
+                        "status": "pending",
+                        "limit": 20,
+                    },
+                }
+            ],
+        }
+
     reminder_plan = _parse_simple_reminder(
         message=clean_message,
         user_id=user_id,
@@ -821,6 +918,36 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
         tasks = first_result.get("tasks", [])
         return f"Done — I created a study plan for {topic} with {len(tasks)} tasks."
 
+    if tool_name == "list_study_plans":
+        study_plans = first_result.get("study_plans", [])
+
+        if not study_plans:
+            return "You do not have any active study plans."
+
+        plan_lines = [
+            f"- Plan {plan.get('id')}: {plan.get('topic')} ({plan.get('status')})"
+            for plan in study_plans
+        ]
+
+        return "Here are your study plans:\n" + "\n".join(plan_lines)
+
+    if tool_name == "list_study_tasks":
+        study_tasks = first_result.get("study_tasks", [])
+
+        if not study_tasks:
+            return "You do not have any pending study tasks."
+
+        task_lines = [
+            (
+                f"- Task {task.get('id')} "
+                f"(Plan {task.get('study_plan_id')}, Day {task.get('day_number')}): "
+                f"{task.get('title')}"
+            )
+            for task in study_tasks
+        ]
+
+        return "Here are your study tasks:\n" + "\n".join(task_lines)
+
     if tool_name == "create_future_me_goal":
         goal = first_result.get("goal", {})
         title = goal.get("title", "your goal")
@@ -829,6 +956,39 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
     if tool_name == "create_future_me_weekly_plan":
         tasks = first_result.get("tasks", [])
         return f"Done — I created your Future Me weekly plan with {len(tasks)} tasks."
+
+    if tool_name == "list_future_me_goals":
+        goals = first_result.get("goals", [])
+
+        if not goals:
+            return "You do not have any active Future Me goals."
+
+        goal_lines = [
+            (
+                f"- Goal {goal.get('id')}: {goal.get('title')} "
+                f"({goal.get('status')}, target: {goal.get('target_date')})"
+            )
+            for goal in goals
+        ]
+
+        return "Here are your Future Me goals:\n" + "\n".join(goal_lines)
+
+    if tool_name == "list_future_me_tasks":
+        tasks = first_result.get("tasks", [])
+
+        if not tasks:
+            return "You do not have any pending Future Me tasks."
+
+        task_lines = [
+            (
+                f"- Task {task.get('id')} "
+                f"(Goal {task.get('goal_id')}, Day {task.get('day_number')}): "
+                f"{task.get('title')}"
+            )
+            for task in tasks
+        ]
+
+        return "Here are your Future Me tasks:\n" + "\n".join(task_lines)
 
     return "Done — I completed the requested action."
 

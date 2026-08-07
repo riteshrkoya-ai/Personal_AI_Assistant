@@ -9,10 +9,16 @@ from app.services.daily_summary_service import build_daily_summary
 from app.services.future_me_service import (
     create_future_me_goal,
     create_future_me_weekly_plan,
+    list_user_future_me_goals,
+    list_user_future_me_tasks,
 )
 from app.services.memory_service import create_memory, search_user_memories
 from app.services.reminder_service import create_reminder, list_user_reminders
-from app.services.study_service import create_study_plan
+from app.services.study_service import (
+    create_study_plan,
+    list_user_study_plans,
+    list_user_study_tasks,
+)
 
 settings = get_settings()
 
@@ -144,6 +150,56 @@ AGENT_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "list_study_plans",
+            "description": "List the current user's study plans.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Study plan status filter, such as active, cancelled, or all.",
+                        "default": "active",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of study plans to return.",
+                        "default": 20,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_study_tasks",
+            "description": "List the current user's study tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "study_plan_id": {
+                        "type": "integer",
+                        "description": "Optional study plan ID to filter tasks.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Optional task status filter, such as pending, completed, cancelled, or all.",
+                        "default": "pending",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of study tasks to return.",
+                        "default": 20,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_future_me_goal",
             "description": "Create a Future Me goal for the current authenticated user.",
             "parameters": {
@@ -186,6 +242,56 @@ AGENT_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["goal_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_future_me_goals",
+            "description": "List the current user's Future Me goals.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Goal status filter, such as active, cancelled, or all.",
+                        "default": "active",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of Future Me goals to return.",
+                        "default": 20,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_future_me_tasks",
+            "description": "List the current user's Future Me tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_id": {
+                        "type": "integer",
+                        "description": "Optional Future Me goal ID to filter tasks.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Optional task status filter, such as pending, completed, cancelled, or all.",
+                        "default": "pending",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of Future Me tasks to return.",
+                        "default": 20,
+                    },
+                },
+                "required": [],
             },
         },
     },
@@ -412,6 +518,73 @@ async def execute_agent_tool(
             ],
         }
 
+    if tool_name == "list_study_plans":
+        status_value = args.get("status", "active")
+        status = str(status_value).strip() if status_value else "active"
+        limit = int(args.get("limit", 20))
+
+        if status.lower() == "all":
+            status = None
+
+        study_plans = await list_user_study_plans(
+            session=session,
+            user_id=user_id,
+            status=status,
+            limit=limit,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "study_plans": [
+                {
+                    "id": plan.id,
+                    "topic": plan.topic,
+                    "goal": plan.goal,
+                    "status": plan.status,
+                    "source": plan.source,
+                    "created_at": plan.created_at.isoformat(),
+                }
+                for plan in study_plans
+            ],
+        }
+
+    if tool_name == "list_study_tasks":
+        study_plan_id_value = args.get("study_plan_id")
+        study_plan_id = int(study_plan_id_value) if study_plan_id_value else None
+
+        status_value = args.get("status", "pending")
+        status = str(status_value).strip() if status_value else "pending"
+        limit = int(args.get("limit", 20))
+
+        if status.lower() == "all":
+            status = None
+
+        study_tasks = await list_user_study_tasks(
+            session=session,
+            user_id=user_id,
+            study_plan_id=study_plan_id,
+            status=status,
+            limit=limit,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "study_tasks": [
+                {
+                    "id": task.id,
+                    "study_plan_id": task.study_plan_id,
+                    "day_number": task.day_number,
+                    "title": task.title,
+                    "description": task.description,
+                    "status": task.status,
+                    "created_at": task.created_at.isoformat(),
+                }
+                for task in study_tasks
+            ],
+        }
+
     if tool_name == "create_future_me_goal":
         title = str(args.get("title", "")).strip()
         description_value = args.get("description")
@@ -467,6 +640,76 @@ async def execute_agent_tool(
                     "description": task.description,
                     "status": task.status,
                     "due_date": task.due_date.isoformat() if task.due_date else None,
+                }
+                for task in tasks
+            ],
+        }
+
+    if tool_name == "list_future_me_goals":
+        status_value = args.get("status", "active")
+        status = str(status_value).strip() if status_value else "active"
+        limit = int(args.get("limit", 20))
+
+        if status.lower() == "all":
+            status = None
+
+        goals = await list_user_future_me_goals(
+            session=session,
+            user_id=user_id,
+            status=status,
+            limit=limit,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "goals": [
+                {
+                    "id": goal.id,
+                    "title": goal.title,
+                    "description": goal.description,
+                    "target_weeks": goal.target_weeks,
+                    "target_date": goal.target_date.isoformat() if goal.target_date else None,
+                    "status": goal.status,
+                    "source": goal.source,
+                    "created_at": goal.created_at.isoformat(),
+                }
+                for goal in goals
+            ],
+        }
+
+    if tool_name == "list_future_me_tasks":
+        goal_id_value = args.get("goal_id")
+        goal_id = int(goal_id_value) if goal_id_value else None
+
+        status_value = args.get("status", "pending")
+        status = str(status_value).strip() if status_value else "pending"
+        limit = int(args.get("limit", 20))
+
+        if status.lower() == "all":
+            status = None
+
+        tasks = await list_user_future_me_tasks(
+            session=session,
+            user_id=user_id,
+            goal_id=goal_id,
+            status=status,
+            limit=limit,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "tasks": [
+                {
+                    "id": task.id,
+                    "goal_id": task.goal_id,
+                    "day_number": task.day_number,
+                    "title": task.title,
+                    "description": task.description,
+                    "status": task.status,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "created_at": task.created_at.isoformat(),
                 }
                 for task in tasks
             ],
