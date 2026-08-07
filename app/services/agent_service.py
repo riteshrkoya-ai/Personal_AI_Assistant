@@ -116,6 +116,7 @@ Important rules:
 - If the user asks what they should focus on today, use get_daily_summary.
 - If the user asks to create a study plan, use create_study_plan.
 - If the user asks to create a future goal, use create_future_me_goal.
+- If the user asks to create a Future Me weekly plan, use create_future_me_weekly_plan.
 - If a reminder request is missing a clear future date or time, do not call a tool. Ask one short clarification question.
 - For create_reminder, scheduled_time_iso must be a future ISO datetime with timezone.
 - The server injects user_id. Never ask for or generate user_id.
@@ -625,6 +626,159 @@ def _parse_simple_reminder(
     }
 
 
+def _extract_number_before_word(
+    message: str,
+    word_patterns: tuple[str, ...],
+    default_value: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    lower_message = message.lower()
+
+    for word_pattern in word_patterns:
+        match = re.search(
+            rf"\b(\d+)\s*{word_pattern}\b",
+            lower_message,
+        )
+
+        if match:
+            value = int(match.group(1))
+            return max(minimum, min(value, maximum))
+
+    return default_value
+
+
+def _clean_study_topic(topic: str) -> str:
+    clean_topic = " ".join(topic.split()).strip(" .")
+
+    clean_topic = re.sub(
+        r"(?i)\bfor\s+\d+\s*(days?|weeks?)\b",
+        "",
+        clean_topic,
+    ).strip(" .")
+
+    clean_topic = re.sub(
+        r"(?i)\bover\s+\d+\s*(days?|weeks?)\b",
+        "",
+        clean_topic,
+    ).strip(" .")
+
+    return clean_topic
+
+
+def _extract_study_plan_details(message: str) -> tuple[str, str | None, int]:
+    clean_message = " ".join(message.split()).strip()
+
+    days = _extract_number_before_word(
+        message=clean_message,
+        word_patterns=("days?",),
+        default_value=5,
+        minimum=1,
+        maximum=14,
+    )
+
+    topic = clean_message
+
+    patterns = [
+        r"(?i)^create\s+(a\s+)?study\s+plan\s+for\s+",
+        r"(?i)^make\s+(a\s+)?study\s+plan\s+for\s+",
+        r"(?i)^build\s+(a\s+)?study\s+plan\s+for\s+",
+        r"(?i)^generate\s+(a\s+)?study\s+plan\s+for\s+",
+        r"(?i)^help\s+me\s+study\s+",
+        r"(?i)^i\s+want\s+to\s+study\s+",
+    ]
+
+    for pattern in patterns:
+        updated_topic = re.sub(pattern, "", topic).strip()
+
+        if updated_topic != topic:
+            topic = updated_topic
+            break
+
+    topic = _clean_study_topic(topic)
+
+    goal = None
+    if topic:
+        goal = f"Build practical understanding of {topic}"
+
+    return topic, goal, days
+
+
+def _extract_future_goal_details(message: str) -> tuple[str, str | None, int]:
+    clean_message = " ".join(message.split()).strip()
+
+    target_weeks = _extract_number_before_word(
+        message=clean_message,
+        word_patterns=("weeks?",),
+        default_value=4,
+        minimum=1,
+        maximum=52,
+    )
+
+    title = clean_message
+
+    patterns = [
+        r"(?i)^create\s+(a\s+)?future\s+me\s+goal\s+to\s+",
+        r"(?i)^create\s+(a\s+)?future\s+goal\s+to\s+",
+        r"(?i)^add\s+(a\s+)?future\s+me\s+goal\s+to\s+",
+        r"(?i)^add\s+(a\s+)?future\s+goal\s+to\s+",
+        r"(?i)^my\s+future\s+me\s+goal\s+is\s+to\s+",
+        r"(?i)^i\s+want\s+to\s+become\s+",
+        r"(?i)^i\s+want\s+to\s+improve\s+",
+    ]
+
+    matched_pattern = ""
+
+    for pattern in patterns:
+        updated_title = re.sub(pattern, "", title).strip()
+
+        if updated_title != title:
+            title = updated_title
+            matched_pattern = pattern
+            break
+
+    title = re.sub(
+        r"(?i)\b(in|over|for)\s+\d+\s*weeks?\b",
+        "",
+        title,
+    ).strip(" .")
+
+    if title:
+        if "become" in matched_pattern.lower():
+            title = f"Become {title}"
+        elif "improve" in matched_pattern.lower():
+            title = f"Improve {title}"
+
+    description = None
+    if title:
+        description = f"Future Me goal created from natural language request: {clean_message}"
+
+    return title, description, target_weeks
+
+
+def _extract_future_weekly_plan_details(message: str) -> tuple[int | None, int]:
+    clean_message = " ".join(message.split()).strip()
+
+    days = _extract_number_before_word(
+        message=clean_message,
+        word_patterns=("days?",),
+        default_value=5,
+        minimum=1,
+        maximum=7,
+    )
+
+    goal_match = re.search(
+        r"(?i)\bgoal\s*(id\s*)?#?\s*(\d+)\b",
+        clean_message,
+    )
+
+    if not goal_match:
+        return None, days
+
+    goal_id = int(goal_match.group(2))
+    return goal_id, days
+
+
 def _deterministic_plan(
     message: str,
     user_id: int | None = None,
@@ -710,6 +864,96 @@ def _deterministic_plan(
                     "arguments": {
                         "query": query,
                         "top_k": 5,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "study plan" in lower_message
+        or lower_message.startswith("help me study ")
+        or lower_message.startswith("i want to study ")
+    ):
+        topic, goal, days = _extract_study_plan_details(clean_message)
+
+        if not topic:
+            return {
+                "response_type": "final",
+                "final_response": "What topic should I create a study plan for?",
+                "tool_calls": [],
+            }
+
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "create_study_plan",
+                    "arguments": {
+                        "topic": topic,
+                        "goal": goal,
+                        "days": days,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "future me goal" in lower_message
+        or "future goal" in lower_message
+        or lower_message.startswith("my future me goal is")
+        or lower_message.startswith("i want to become ")
+        or lower_message.startswith("i want to improve ")
+    ):
+        title, description, target_weeks = _extract_future_goal_details(clean_message)
+
+        if not title:
+            return {
+                "response_type": "final",
+                "final_response": "What Future Me goal would you like to create?",
+                "tool_calls": [],
+            }
+
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "create_future_me_goal",
+                    "arguments": {
+                        "title": title,
+                        "description": description,
+                        "target_weeks": target_weeks,
+                    },
+                }
+            ],
+        }
+
+    if (
+        "weekly plan" in lower_message
+        and ("future me" in lower_message or "goal" in lower_message)
+    ):
+        goal_id, days = _extract_future_weekly_plan_details(clean_message)
+
+        if goal_id is None:
+            return {
+                "response_type": "final",
+                "final_response": (
+                    "Please provide the Future Me goal ID. "
+                    "For example: create a weekly plan for goal 1."
+                ),
+                "tool_calls": [],
+            }
+
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "create_future_me_weekly_plan",
+                    "arguments": {
+                        "goal_id": goal_id,
+                        "days": days,
                     },
                 }
             ],
