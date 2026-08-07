@@ -116,6 +116,8 @@ Important rules:
 - If the user asks what they should focus on today, use get_daily_summary.
 - If the user asks to create a study plan, use create_study_plan.
 - If the user asks to create a future goal, use create_future_me_goal.
+- If the user asks to complete a study task, use complete_study_task.
+- If the user asks to complete a Future Me task, use complete_future_me_task.
 - If a reminder request is missing a clear future date or time, do not call a tool. Ask one short clarification question.
 - For create_reminder, scheduled_time_iso must be a future ISO datetime with timezone.
 - The server injects user_id. Never ask for or generate user_id.
@@ -625,6 +627,18 @@ def _parse_simple_reminder(
     }
 
 
+def _extract_task_id_from_text(message: str) -> int | None:
+    task_match = re.search(
+        r"(?i)\btask\s*#?\s*(\d+)\b",
+        message,
+    )
+
+    if not task_match:
+        return None
+
+    return int(task_match.group(1))
+
+
 def _deterministic_plan(
     message: str,
     user_id: int | None = None,
@@ -710,6 +724,64 @@ def _deterministic_plan(
                     "arguments": {
                         "query": query,
                         "top_k": 5,
+                    },
+                }
+            ],
+        }
+
+    is_completion_request = (
+        "complete" in lower_message
+        or "completed" in lower_message
+        or "mark" in lower_message
+        or "done" in lower_message
+        or "finish" in lower_message
+        or "finished" in lower_message
+    )
+
+    if is_completion_request and "study task" in lower_message:
+        task_id = _extract_task_id_from_text(clean_message)
+
+        if task_id is None:
+            return {
+                "response_type": "final",
+                "final_response": "Which study task should I mark as completed? Please include the task ID.",
+                "tool_calls": [],
+            }
+
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "complete_study_task",
+                    "arguments": {
+                        "task_id": task_id,
+                    },
+                }
+            ],
+        }
+
+    if is_completion_request and (
+        "future me task" in lower_message
+        or "future task" in lower_message
+    ):
+        task_id = _extract_task_id_from_text(clean_message)
+
+        if task_id is None:
+            return {
+                "response_type": "final",
+                "final_response": "Which Future Me task should I mark as completed? Please include the task ID.",
+                "tool_calls": [],
+            }
+
+        return {
+            "response_type": "tool_calls",
+            "final_response": "",
+            "tool_calls": [
+                {
+                    "tool_name": "complete_future_me_task",
+                    "arguments": {
+                        "task_id": task_id,
                     },
                 }
             ],
@@ -821,6 +893,18 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
         tasks = first_result.get("tasks", [])
         return f"Done — I created a study plan for {topic} with {len(tasks)} tasks."
 
+    if tool_name == "complete_study_task":
+        task_id = first_result.get("task_id")
+        completed = first_result.get("completed") is True
+
+        if completed:
+            return f"Done — I marked study task {task_id} as completed."
+
+        return (
+            f"I could not mark study task {task_id} as completed. "
+            "It may not exist, may not belong to you, or may already be completed."
+        )
+
     if tool_name == "create_future_me_goal":
         goal = first_result.get("goal", {})
         title = goal.get("title", "your goal")
@@ -829,6 +913,18 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
     if tool_name == "create_future_me_weekly_plan":
         tasks = first_result.get("tasks", [])
         return f"Done — I created your Future Me weekly plan with {len(tasks)} tasks."
+
+    if tool_name == "complete_future_me_task":
+        task_id = first_result.get("task_id")
+        completed = first_result.get("completed") is True
+
+        if completed:
+            return f"Done — I marked Future Me task {task_id} as completed."
+
+        return (
+            f"I could not mark Future Me task {task_id} as completed. "
+            "It may not exist, may not belong to you, or may already be completed."
+        )
 
     return "Done — I completed the requested action."
 
