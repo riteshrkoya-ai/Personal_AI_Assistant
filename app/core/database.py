@@ -17,8 +17,16 @@ class Base(DeclarativeBase):
     pass
 
 
+def _normalize_database_url(url: str) -> str:
+    if url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + url[len("postgresql://"):]
+    return url
+
+
 engine = create_async_engine(
-    settings.database_url,
+    _normalize_database_url(settings.database_url),
     echo=False,
     pool_pre_ping=True,
 )

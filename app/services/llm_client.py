@@ -59,10 +59,9 @@ async def generate_chat_response(
         system_prompt += "\n\n" + memory_context
 
     try:
-        response = await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
-            messages=[
+        kwargs = {
+            "model": settings.llm_model,
+            "messages": [
                 {
                     "role": "system",
                     "content": system_prompt,
@@ -72,9 +71,14 @@ async def generate_chat_response(
                     "content": user_message,
                 },
             ],
-            temperature=0.2,
-            max_tokens=256,
-        )
+            "temperature": 0.2,
+            "max_tokens": 256,
+        }
+
+        if settings.llm_model.startswith("ollama/"):
+            kwargs["api_base"] = settings.ollama_base_url
+
+        response = await acompletion(**kwargs)
 
         return response.choices[0].message.content or "I could not generate a response."
 
@@ -86,18 +90,22 @@ async def generate_chat_response(
 
 async def warm_up_model() -> None:
     try:
-        await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
-            messages=[
+        kwargs = {
+            "model": settings.llm_model,
+            "messages": [
                 {
                     "role": "user",
                     "content": "hi",
                 }
             ],
-            temperature=0,
-            max_tokens=1,
-        )
+            "temperature": 0,
+            "max_tokens": 1,
+        }
+
+        if settings.llm_model.startswith("ollama/"):
+            kwargs["api_base"] = settings.ollama_base_url
+
+        await acompletion(**kwargs)
         logger.info("Ollama model warm-up completed.")
     except Exception:
         logger.exception("Ollama model warm-up failed.")

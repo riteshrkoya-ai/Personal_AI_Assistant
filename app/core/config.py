@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://ollama:11434"
     ollama_model: str = "llama3.1:8b"
+    llm_model: str = "ollama/llama3.1:8b"
 
     telegram_bot_token: str | None = None
     authorized_telegram_chat_ids: str | None = None

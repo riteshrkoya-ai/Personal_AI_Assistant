@@ -7,7 +7,7 @@ python-dotenv
 litellm
 apscheduler
 python-telegram-bot
-sentence-transformers
+fastembed
 pgvector
 pytest
 pytest-asyncio

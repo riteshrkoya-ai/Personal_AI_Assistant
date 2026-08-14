@@ -1,7 +1,6 @@
 import json
 import logging
-import re
-from datetime import datetime, time, timedelta
+from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -14,7 +13,13 @@ from app.services.agent_tools import AGENT_TOOL_SCHEMAS, execute_agent_tool
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-PENDING_REMINDER_REQUESTS: dict[int, dict[str, Any]] = {}
+# Design rule for this file: NO natural-language parsing lives here.
+# The planner LLM decides which tool to call and with what arguments.
+# Deterministic code is allowed in exactly one place: formatting tool
+# RESULTS into user-facing text (_format_tool_results). Every regex added
+# above the planner makes the "agent" less real.
+
+MAX_HISTORY_MESSAGES = 6
 
 
 def _message_content(response: Any) -> str:
@@ -77,7 +82,6 @@ def _technical_assistant_prompt() -> str:
         "When the user asks about RAG in an AI, ML, LLM, or software context, "
         "RAG means Retrieval-Augmented Generation. "
         "If an acronym has multiple meanings, choose the meaning that best fits the user's context. "
-        "If the context is unclear, briefly state the most likely meaning and ask one short clarifying question. "
         "Do not invent technical definitions, facts, implementation details, or user-specific information. "
         "If you are unsure, say you are unsure. "
         "Prefer direct answers over long explanations. "
@@ -91,7 +95,7 @@ def _build_planner_prompt() -> str:
     return f"""
 You are an AI personal assistant agent planner.
 
-Your job is to decide whether the user's message needs a tool call.
+Your job is to decide whether the user's latest message needs a tool call.
 
 Current datetime:
 {now.isoformat()}
@@ -107,10 +111,8 @@ Important rules:
 - Do not include markdown.
 - Do not include explanations outside JSON.
 - Never invent that an action was completed.
-- If saving a memory, use save_memory.
 - If the user says remember, save, note, or keep in mind something personal, use save_memory.
-- If searching saved information, use search_memory.
-- If the user asks what you remember, what do you know about me, or anything from memory, use search_memory.
+- If the user asks what you remember or know about them, use search_memory.
 - If creating a reminder, use create_reminder.
 - If listing reminders, use list_reminders.
 - If the user asks what they should focus on today, use get_daily_summary.
@@ -118,16 +120,28 @@ Important rules:
 - If the user asks to create a future goal, use create_future_me_goal.
 - If the user asks to complete a study task, use complete_study_task.
 - If the user asks to complete a Future Me task, use complete_future_me_task.
-- If a reminder request is missing a clear future date or time, do not call a tool. Ask one short clarification question.
-- For create_reminder, scheduled_time_iso must be a future ISO datetime with timezone.
+- Use the earlier conversation messages for context. If your previous message
+  asked a clarifying question (for example, asking for a reminder time), treat
+  the user's latest message as the answer and complete the original request.
+- If a reminder request is missing a clear future date or time, do not call a
+  tool. Return response_type "final" with one short clarification question.
+- For create_reminder, scheduled_time_iso must be a future ISO datetime.
+  Convert relative times like "tomorrow at 8pm" using the current datetime above.
 - The server injects user_id. Never ask for or generate user_id.
 
 Return JSON in exactly one of these formats.
 
-For normal answer without tools:
+For a normal answer without tools:
 {{
   "response_type": "final",
   "final_response": "",
+  "tool_calls": []
+}}
+
+For a clarification question:
+{{
+  "response_type": "final",
+  "final_response": "your one short question here",
   "tool_calls": []
 }}
 
@@ -145,8 +159,8 @@ For tool usage:
   ]
 }}
 
-You may return multiple tool calls only when the user's message clearly asks for multiple actions.
-Keep arguments minimal and accurate.
+You may return multiple tool calls only when the user's message clearly asks
+for multiple actions. Keep arguments minimal and accurate.
 """.strip()
 
 
@@ -155,60 +169,19 @@ async def _call_llm(
     temperature: float = 0.1,
     max_tokens: int = 512,
 ) -> str:
-    response = await acompletion(
-        model=f"ollama/{settings.ollama_model}",
-        api_base=settings.ollama_base_url,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    kwargs: dict[str, Any] = {
+        "model": settings.llm_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    if settings.llm_model.startswith("ollama/"):
+        kwargs["api_base"] = settings.ollama_base_url
+
+    response = await acompletion(**kwargs)
 
     return _message_content(response)
-
-
-def _extract_memory_content(message: str) -> str:
-    patterns = [
-        r"^remember that\s+",
-        r"^remember\s+",
-        r"^save that\s+",
-        r"^save this\s+",
-        r"^note that\s+",
-        r"^keep in mind that\s+",
-        r"^keep in mind\s+",
-    ]
-
-    content = message.strip()
-
-    for pattern in patterns:
-        content = re.sub(pattern, "", content, flags=re.IGNORECASE).strip()
-
-    return content.rstrip(".")
-
-
-def _extract_memory_query(message: str) -> str:
-    clean_message = message.strip().rstrip("?")
-
-    replacements = [
-        "what do you remember about",
-        "what do you know about",
-        "what have i told you about",
-        "search memory for",
-        "search memory",
-        "find memory about",
-        "find memory",
-    ]
-
-    query = clean_message
-
-    for replacement in replacements:
-        query = re.sub(
-            f"^{re.escape(replacement)}",
-            "",
-            query,
-            flags=re.IGNORECASE,
-        ).strip()
-
-    return query or clean_message
 
 
 def _format_datetime_for_user(value: str) -> str:
@@ -233,576 +206,6 @@ def _format_datetime_for_user(value: str) -> str:
 
     except Exception:
         return value
-
-
-def _extract_date_from_text(
-    message: str,
-    now: datetime,
-) -> tuple[Any | None, bool]:
-    lower_message = message.lower()
-
-    if "tomorrow" in lower_message:
-        return (now + timedelta(days=1)).date(), True
-
-    if "today" in lower_message:
-        return now.date(), True
-
-    date_match = re.search(
-        r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b",
-        lower_message,
-    )
-
-    if not date_match:
-        return None, False
-
-    month = int(date_match.group(1))
-    day = int(date_match.group(2))
-    year_text = date_match.group(3)
-
-    if year_text:
-        year = int(year_text)
-        if year < 100:
-            year += 2000
-    else:
-        year = now.year
-
-    try:
-        parsed_date = datetime(year, month, day).date()
-    except ValueError:
-        return None, False
-
-    return parsed_date, True
-
-
-def _extract_time_from_text(
-    message: str,
-    default_meridiem: str | None = None,
-) -> tuple[int | None, int | None, str | None, str | None]:
-    lower_message = message.lower()
-
-    time_match = re.search(
-        r"\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b",
-        lower_message,
-    )
-
-    if time_match:
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2) or 0)
-        meridiem = time_match.group(3)
-
-        if hour < 1 or hour > 12 or minute < 0 or minute > 59:
-            return None, None, None, "Please provide a valid reminder time."
-
-        if meridiem == "pm" and hour != 12:
-            hour += 12
-
-        if meridiem == "am" and hour == 12:
-            hour = 0
-
-        return hour, minute, meridiem, None
-
-    no_meridiem_match = re.search(
-        r"\b(?:at\s+)?(\d{1,2}):(\d{2})\b",
-        lower_message,
-    )
-
-    if not no_meridiem_match:
-        return None, None, None, "What time should I set the reminder for?"
-
-    hour = int(no_meridiem_match.group(1))
-    minute = int(no_meridiem_match.group(2))
-
-    if minute < 0 or minute > 59:
-        return None, None, None, "Please provide a valid reminder time."
-
-    if hour > 12:
-        if hour > 23:
-            return None, None, None, "Please provide a valid reminder time."
-
-        return hour, minute, None, None
-
-    if default_meridiem:
-        meridiem = default_meridiem
-
-        if meridiem == "pm" and hour != 12:
-            hour += 12
-
-        if meridiem == "am" and hour == 12:
-            hour = 0
-
-        return hour, minute, meridiem, None
-
-    return None, None, None, "Is that AM or PM?"
-
-
-def _build_scheduled_time_from_text(
-    message: str,
-    default_meridiem: str | None = None,
-) -> tuple[datetime | None, str | None, str | None]:
-    timezone = ZoneInfo(settings.timezone)
-    now = datetime.now(timezone)
-
-    scheduled_date, date_was_explicit = _extract_date_from_text(
-        message=message,
-        now=now,
-    )
-
-    hour, minute, meridiem, time_error = _extract_time_from_text(
-        message=message,
-        default_meridiem=default_meridiem,
-    )
-
-    if time_error:
-        return None, time_error, meridiem
-
-    if hour is None or minute is None:
-        return None, "What time should I set the reminder for?", meridiem
-
-    if scheduled_date is None:
-        scheduled_time = datetime.combine(
-            now.date(),
-            time(hour=hour, minute=minute),
-            tzinfo=timezone,
-        )
-
-        if scheduled_time <= now:
-            scheduled_time = scheduled_time + timedelta(days=1)
-
-        return scheduled_time, None, meridiem
-
-    scheduled_time = datetime.combine(
-        scheduled_date,
-        time(hour=hour, minute=minute),
-        tzinfo=timezone,
-    )
-
-    if scheduled_time <= now:
-        if date_was_explicit:
-            return (
-                None,
-                "That reminder time has already passed. What future time should I use?",
-                meridiem,
-            )
-
-        scheduled_time = scheduled_time + timedelta(days=1)
-
-    return scheduled_time, None, meridiem
-
-
-def _extract_reminder_message(message: str) -> str:
-    message_part = " ".join(message.split()).strip()
-
-    message_part = re.sub(
-        r"(?i)^remind me\s+",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)\b(today|tomorrow)\b",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)\b(on\s+)?\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)^to\s+",
-        "",
-        message_part,
-    ).strip()
-
-    message_part = re.sub(
-        r"(?i)\b(and|on|at)\b$",
-        "",
-        message_part,
-    ).strip()
-
-    return message_part.strip(" .")
-
-
-def _contains_date_or_time(message: str) -> bool:
-    lower_message = message.lower()
-
-    has_date_word = "today" in lower_message or "tomorrow" in lower_message
-    has_date_number = re.search(
-        r"\b\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
-        lower_message,
-    )
-    has_time = re.search(
-        r"\b(?:at\s+)?\d{1,2}(:\d{2})?\s*(am|pm)\b",
-        lower_message,
-    ) or re.search(
-        r"\b(?:at\s+)?\d{1,2}:\d{2}\b",
-        lower_message,
-    )
-
-    return bool(has_date_word or has_date_number or has_time)
-
-
-def _looks_like_standalone_datetime(message: str) -> bool:
-    lower_message = " ".join(message.lower().split()).strip()
-
-    if not _contains_date_or_time(lower_message):
-        return False
-
-    if "remind" in lower_message or "remember" in lower_message:
-        return False
-
-    remaining = lower_message
-
-    remaining = re.sub(
-        r"\b(today|tomorrow)\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(
-        r"\b(on\s+)?\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(
-        r"\bat\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(
-        r"\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(
-        r"\b\d{1,2}:\d{2}\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(
-        r"\b(and|at|on|for)\b",
-        " ",
-        remaining,
-    )
-
-    remaining = re.sub(r"[^a-z0-9]+", " ", remaining).strip()
-
-    return remaining == ""
-
-
-def _build_pending_reminder_plan(
-    user_id: int,
-    message: str,
-) -> dict[str, Any] | None:
-    pending_reminder = PENDING_REMINDER_REQUESTS.get(user_id)
-
-    if not pending_reminder:
-        return None
-
-    clean_message = " ".join(message.split()).strip()
-    lower_message = clean_message.lower()
-
-    if lower_message in {"cancel", "cancel reminder", "never mind", "nevermind"}:
-        PENDING_REMINDER_REQUESTS.pop(user_id, None)
-
-        return {
-            "response_type": "final",
-            "final_response": "Okay, I cancelled that pending reminder request.",
-            "tool_calls": [],
-        }
-
-    if not _contains_date_or_time(clean_message):
-        return None
-
-    scheduled_time, question, meridiem = _build_scheduled_time_from_text(
-        message=clean_message,
-        default_meridiem=pending_reminder.get("meridiem"),
-    )
-
-    if scheduled_time is None:
-        if meridiem:
-            pending_reminder["meridiem"] = meridiem
-
-        return {
-            "response_type": "final",
-            "final_response": question or "What date and time should I set the reminder for?",
-            "tool_calls": [],
-        }
-
-    reminder_message = str(pending_reminder.get("message") or "").strip()
-
-    if not reminder_message:
-        PENDING_REMINDER_REQUESTS.pop(user_id, None)
-
-        return {
-            "response_type": "final",
-            "final_response": "What should I remind you about?",
-            "tool_calls": [],
-        }
-
-    PENDING_REMINDER_REQUESTS.pop(user_id, None)
-
-    return {
-        "response_type": "tool_calls",
-        "final_response": "",
-        "tool_calls": [
-            {
-                "tool_name": "create_reminder",
-                "arguments": {
-                    "message": reminder_message,
-                    "scheduled_time_iso": scheduled_time.isoformat(),
-                },
-            }
-        ],
-    }
-
-
-def _parse_simple_reminder(
-    message: str,
-    user_id: int | None = None,
-) -> dict[str, Any] | None:
-    clean_message = " ".join(message.split()).strip()
-    lower_message = clean_message.lower()
-
-    if "remind me" not in lower_message:
-        return None
-
-    reminder_message = _extract_reminder_message(clean_message)
-
-    scheduled_time, question, meridiem = _build_scheduled_time_from_text(
-        message=clean_message,
-    )
-
-    if not reminder_message and scheduled_time is not None:
-        return {
-            "response_type": "final",
-            "final_response": "What should I remind you about?",
-            "tool_calls": [],
-        }
-
-    if scheduled_time is None:
-        if user_id is not None and reminder_message:
-            PENDING_REMINDER_REQUESTS[user_id] = {
-                "message": reminder_message,
-                "created_at": datetime.now(ZoneInfo(settings.timezone)).isoformat(),
-                "meridiem": meridiem,
-            }
-
-        return {
-            "response_type": "final",
-            "final_response": question or "What date and time should I set the reminder for?",
-            "tool_calls": [],
-        }
-
-    return {
-        "response_type": "tool_calls",
-        "final_response": "",
-        "tool_calls": [
-            {
-                "tool_name": "create_reminder",
-                "arguments": {
-                    "message": reminder_message,
-                    "scheduled_time_iso": scheduled_time.isoformat(),
-                },
-            }
-        ],
-    }
-
-
-def _extract_task_id_from_text(message: str) -> int | None:
-    task_match = re.search(
-        r"(?i)\btask\s*#?\s*(\d+)\b",
-        message,
-    )
-
-    if not task_match:
-        return None
-
-    return int(task_match.group(1))
-
-
-def _deterministic_plan(
-    message: str,
-    user_id: int | None = None,
-) -> dict[str, Any] | None:
-    clean_message = " ".join((message or "").split()).strip()
-    lower_message = clean_message.lower()
-
-    if user_id is not None:
-        pending_reminder_plan = _build_pending_reminder_plan(
-            user_id=user_id,
-            message=clean_message,
-        )
-
-        if pending_reminder_plan is not None:
-            return pending_reminder_plan
-
-    if lower_message in {
-        "what is rag?",
-        "what is rag",
-        "why do we use rag?",
-        "why do we use rag",
-    }:
-        return {
-            "response_type": "final",
-            "final_response": (
-                "RAG means Retrieval-Augmented Generation. "
-                "It helps an LLM answer using retrieved external or user-specific context "
-                "instead of relying only on the model's built-in knowledge."
-            ),
-            "tool_calls": [],
-        }
-
-    if lower_message.startswith(
-        (
-            "remember ",
-            "remember that ",
-            "save that ",
-            "save this ",
-            "note that ",
-            "keep in mind ",
-            "keep in mind that ",
-        )
-    ):
-        content = _extract_memory_content(clean_message)
-
-        if not content:
-            return {
-                "response_type": "final",
-                "final_response": "What would you like me to remember?",
-                "tool_calls": [],
-            }
-
-        return {
-            "response_type": "tool_calls",
-            "final_response": "",
-            "tool_calls": [
-                {
-                    "tool_name": "save_memory",
-                    "arguments": {
-                        "content": content,
-                    },
-                }
-            ],
-        }
-
-    if lower_message.startswith(
-        (
-            "what do you remember",
-            "what do you know about",
-            "what have i told you about",
-            "search memory",
-            "find memory",
-        )
-    ):
-        query = _extract_memory_query(clean_message)
-
-        return {
-            "response_type": "tool_calls",
-            "final_response": "",
-            "tool_calls": [
-                {
-                    "tool_name": "search_memory",
-                    "arguments": {
-                        "query": query,
-                        "top_k": 5,
-                    },
-                }
-            ],
-        }
-
-    is_completion_request = (
-        "complete" in lower_message
-        or "completed" in lower_message
-        or "mark" in lower_message
-        or "done" in lower_message
-        or "finish" in lower_message
-        or "finished" in lower_message
-    )
-
-    if is_completion_request and "study task" in lower_message:
-        task_id = _extract_task_id_from_text(clean_message)
-
-        if task_id is None:
-            return {
-                "response_type": "final",
-                "final_response": "Which study task should I mark as completed? Please include the task ID.",
-                "tool_calls": [],
-            }
-
-        return {
-            "response_type": "tool_calls",
-            "final_response": "",
-            "tool_calls": [
-                {
-                    "tool_name": "complete_study_task",
-                    "arguments": {
-                        "task_id": task_id,
-                    },
-                }
-            ],
-        }
-
-    if is_completion_request and (
-        "future me task" in lower_message
-        or "future task" in lower_message
-    ):
-        task_id = _extract_task_id_from_text(clean_message)
-
-        if task_id is None:
-            return {
-                "response_type": "final",
-                "final_response": "Which Future Me task should I mark as completed? Please include the task ID.",
-                "tool_calls": [],
-            }
-
-        return {
-            "response_type": "tool_calls",
-            "final_response": "",
-            "tool_calls": [
-                {
-                    "tool_name": "complete_future_me_task",
-                    "arguments": {
-                        "task_id": task_id,
-                    },
-                }
-            ],
-        }
-
-    reminder_plan = _parse_simple_reminder(
-        message=clean_message,
-        user_id=user_id,
-    )
-
-    if reminder_plan is not None:
-        return reminder_plan
-
-    if _looks_like_standalone_datetime(clean_message):
-        return {
-            "response_type": "final",
-            "final_response": "What should I remind you about?",
-            "tool_calls": [],
-        }
-
-    return None
 
 
 def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
@@ -926,37 +329,34 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
             "It may not exist, may not belong to you, or may already be completed."
         )
 
-    return "Done — I completed the requested action."
+    return "Done."
 
 
-async def _normal_answer(user_message: str) -> str:
-    lower_message = user_message.lower().strip()
+async def _normal_answer(
+    user_message: str,
+    recent_history: list[dict[str, str]] | None = None,
+) -> str:
+    messages: list[dict[str, str]] = [
+        {
+            "role": "system",
+            "content": _technical_assistant_prompt(),
+        }
+    ]
 
-    if lower_message in {
-        "what is rag?",
-        "what is rag",
-        "why do we use rag?",
-        "why do we use rag",
-    }:
-        return (
-            "RAG means Retrieval-Augmented Generation. "
-            "It helps an LLM answer using retrieved external or user-specific context "
-            "instead of relying only on the model's built-in knowledge."
-        )
+    if recent_history:
+        messages.extend(recent_history)
+
+    messages.append(
+        {
+            "role": "user",
+            "content": user_message,
+        }
+    )
 
     answer = await _call_llm(
-        messages=[
-            {
-                "role": "system",
-                "content": _technical_assistant_prompt(),
-            },
-            {
-                "role": "user",
-                "content": user_message,
-            },
-        ],
+        messages=messages,
         temperature=0.2,
-        max_tokens=256,
+        max_tokens=512,
     )
 
     return answer.strip()
@@ -966,7 +366,18 @@ async def run_agent(
     session: AsyncSession,
     user_id: int,
     user_message: str,
+    recent_history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
+    """
+    One full agent turn.
+
+    recent_history: the last few chat messages for this user, oldest first,
+    as [{"role": "user"|"assistant", "content": "..."}]. This is how
+    clarification turns work: if the assistant just asked "What time?",
+    the planner sees that question and treats the new message as the answer.
+
+    The caller owns the session and the commit.
+    """
     clean_message = " ".join((user_message or "").split()).strip()
 
     if not clean_message:
@@ -977,55 +388,55 @@ async def run_agent(
             "tool_results": [],
         }
 
-    deterministic_plan = _deterministic_plan(
-        message=clean_message,
-        user_id=user_id,
+    planner_messages: list[dict[str, str]] = [
+        {
+            "role": "system",
+            "content": _build_planner_prompt(),
+        }
+    ]
+
+    if recent_history:
+        planner_messages.extend(recent_history[-MAX_HISTORY_MESSAGES:])
+
+    planner_messages.append(
+        {
+            "role": "user",
+            "content": clean_message,
+        }
     )
 
-    if deterministic_plan is not None:
-        planner_output = deterministic_plan
-    else:
-        planner_prompt = _build_planner_prompt()
+    try:
+        planner_text = await _call_llm(
+            messages=planner_messages,
+            temperature=0,
+            max_tokens=512,
+        )
 
-        try:
-            planner_text = await _call_llm(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": planner_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": clean_message,
-                    },
-                ],
-                temperature=0,
-                max_tokens=512,
-            )
+        planner_output = _extract_json_object(planner_text)
 
-            planner_output = _extract_json_object(planner_text)
+    except Exception:
+        logger.exception("Agent planner failed. Falling back to normal answer.")
 
-        except Exception:
-            logger.exception("Agent planner failed. Falling back to normal answer.")
+        fallback_answer = await _normal_answer(clean_message, recent_history)
 
-            fallback_answer = await _normal_answer(clean_message)
-
-            return {
-                "success": True,
-                "final_response": fallback_answer,
-                "planner_output": {},
-                "tool_results": [],
-            }
+        return {
+            "success": True,
+            "final_response": fallback_answer,
+            "planner_output": {},
+            "tool_results": [],
+        }
 
     response_type = planner_output.get("response_type")
 
     if response_type == "final":
-        deterministic_final = str(planner_output.get("final_response") or "").strip()
+        planner_final = str(planner_output.get("final_response") or "").strip()
 
-        if deterministic_plan is not None and deterministic_final:
-            final_response = deterministic_final
+        # If the planner wrote a clarification question, use it directly.
+        # Otherwise generate a normal conversational answer.
+        if planner_final:
+            final_response = planner_final
         else:
-            final_response = await _normal_answer(clean_message)
+            final_response = await _normal_answer(clean_message, recent_history)
 
         return {
             "success": True,
@@ -1035,7 +446,7 @@ async def run_agent(
         }
 
     if response_type != "tool_calls":
-        fallback_answer = await _normal_answer(clean_message)
+        fallback_answer = await _normal_answer(clean_message, recent_history)
 
         return {
             "success": True,
@@ -1062,6 +473,13 @@ async def run_agent(
 
         if not isinstance(arguments, dict):
             arguments = {}
+
+        logger.info(
+            "agent tool=%s args=%s user_id=%s",
+            tool_name,
+            json.dumps(arguments)[:200],
+            user_id,
+        )
 
         try:
             result = await execute_agent_tool(
