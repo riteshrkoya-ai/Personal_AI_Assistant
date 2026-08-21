@@ -12,17 +12,24 @@ class Settings(BaseSettings):
     database_url: str
 
     # Local/default LLM configuration.
-    # If LLM_MODEL is not set, the app keeps using Ollama exactly as before.
+    # If LLM_MODEL is not set, the app keeps using Ollama.
     ollama_base_url: str = "http://ollama:11434"
     ollama_model: str = "llama3.1:8b"
     llm_model: str | None = None
 
-    # Optional cloud-provider credentials for Render.
+    # Optional cloud-provider credentials.
     gemini_api_key: str | None = None
     groq_api_key: str | None = None
 
+    # Telegram configuration.
     telegram_bot_token: str | None = None
     authorized_telegram_chat_ids: str | None = None
+
+    # Local uses polling. Render will explicitly set this to "webhook".
+    telegram_mode: str = "polling"
+    telegram_webhook_url: str | None = None
+    telegram_webhook_secret: str | None = None
+
     api_base_url: str = "http://api:8000"
 
     embedding_backend: str = "sentence_transformers"
