@@ -5,7 +5,7 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from litellm import acompletion
+from app.services.llm_provider import configured_acompletion as acompletion
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings

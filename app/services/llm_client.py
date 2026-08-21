@@ -1,11 +1,12 @@
-from litellm import acompletion
-
-from app.core.config import get_settings
 import logging
 
-logger = logging.getLogger(__name__)
+from app.services.llm_provider import (
+    configured_acompletion,
+    get_llm_model,
+    is_local_ollama,
+)
 
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def build_memory_context(memories: list[str] | None) -> str:
@@ -27,10 +28,10 @@ async def generate_chat_response(
     memories: list[str] | None = None,
 ) -> str:
     """
-    Generate a general assistant response using the configured Ollama model.
+    Generate a general assistant response using the configured LiteLLM provider.
 
-    This is not full document RAG yet. For Phase 3, we can optionally pass
-    relevant user memories into the prompt.
+    Local development defaults to Ollama. Render can override LLM_MODEL and
+    provide a Gemini or Groq API key without changing local configuration.
     """
     memory_context = build_memory_context(memories)
 
@@ -59,9 +60,7 @@ async def generate_chat_response(
         system_prompt += "\n\n" + memory_context
 
     try:
-        response = await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
+        response = await configured_acompletion(
             messages=[
                 {
                     "role": "system",
@@ -79,16 +78,20 @@ async def generate_chat_response(
         return response.choices[0].message.content or "I could not generate a response."
 
     except Exception as exc:
+        logger.exception("LLM request failed for model %s", get_llm_model())
         return (
-            "I could not reach the local LLM right now. "
+            "I could not reach the configured LLM right now. "
             f"Technical detail: {type(exc).__name__}: {exc}"
         )
 
+
 async def warm_up_model() -> None:
+    if not is_local_ollama():
+        logger.info("Skipping LLM warm-up for cloud model %s.", get_llm_model())
+        return
+
     try:
-        await acompletion(
-            model=f"ollama/{settings.ollama_model}",
-            api_base=settings.ollama_base_url,
+        await configured_acompletion(
             messages=[
                 {
                     "role": "user",
