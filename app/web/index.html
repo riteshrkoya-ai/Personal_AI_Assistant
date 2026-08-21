@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Personal AI Assistant</title>
+
+    <meta
+        name="description"
+        content="Personal AI Assistant powered by FastAPI, Gemini, PostgreSQL, pgvector, and Telegram."
+    >
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #f6f8fb;
+            --surface: #ffffff;
+            --surface-soft: #f1f5f9;
+            --text: #172033;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --assistant: #eef2ff;
+            --user: #4f46e5;
+            --success: #16a34a;
+            --shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family:
+                Inter,
+                ui-sans-serif,
+                system-ui,
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(
+                    circle at top left,
+                    rgba(79, 70, 229, 0.12),
+                    transparent 32%
+                ),
+                radial-gradient(
+                    circle at top right,
+                    rgba(14, 165, 233, 0.10),
+                    transparent 30%
+                ),
+                var(--bg);
+        }
+
+        button,
+        textarea,
+        a {
+            font: inherit;
+        }
+
+        .page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .topbar {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 22px 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            color: white;
+            font-weight: 800;
+            background:
+                linear-gradient(
+                    135deg,
+                    #4f46e5,
+                    #7c3aed
+                );
+            box-shadow:
+                0 10px 24px rgba(79, 70, 229, 0.24);
+        }
+
+        .brand-name {
+            font-weight: 800;
+            font-size: 18px;
+        }
+
+        .brand-subtitle {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .link-button {
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text);
+            text-decoration: none;
+            padding: 9px 14px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: 0.2s ease;
+        }
+
+        .link-button:hover {
+            transform: translateY(-1px);
+            border-color: #cbd5e1;
+        }
+
+        .telegram-button {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .telegram-button:hover {
+            background: var(--primary-dark);
+        }
+
+        .content {
+            width: min(1180px, calc(100% - 32px));
+            margin: 18px auto 40px;
+            flex: 1;
+            display: grid;
+            grid-template-columns: 330px minmax(0, 1fr);
+            gap: 24px;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .hero-card,
+        .info-card,
+        .chat-card {
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: var(--shadow);
+        }
+
+        .hero-card {
+            border-radius: 24px;
+            padding: 26px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: #ecfdf5;
+            color: #15803d;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+
+        .hero-card h1 {
+            font-size: 30px;
+            line-height: 1.1;
+            margin: 20px 0 12px;
+            letter-spacing: -0.04em;
+        }
+
+        .hero-card p {
+            color: var(--muted);
+            line-height: 1.6;
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .stack {
+            margin-top: 22px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .badge {
+            padding: 6px 9px;
+            border-radius: 8px;
+            background: var(--surface-soft);
+            color: #475569;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .info-card {
+            border-radius: 20px;
+            padding: 20px;
+        }
+
+        .info-card h3 {
+            margin: 0 0 12px;
+            font-size: 14px;
+        }
+
+        .info-card p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        .examples {
+            display: grid;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        .example-button {
+            text-align: left;
+            border: 1px solid var(--border);
+            background: white;
+            color: #334155;
+            border-radius: 10px;
+            padding: 10px 11px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: 0.18s ease;
+        }
+
+        .example-button:hover {
+            background: var(--surface-soft);
+            border-color: #cbd5e1;
+        }
+
+        .chat-card {
+            border-radius: 24px;
+            min-height: 690px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 19px 22px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .chat-title {
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .chat-subtitle {
+            margin-top: 3px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .clear-button {
+            border: none;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .clear-button:hover {
+            color: var(--text);
+        }
+
+        .messages {
+            flex: 1;
+            padding: 26px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            min-height: 0;
+        }
+
+        .message-row {
+            display: flex;
+            gap: 11px;
+            max-width: 84%;
+        }
+
+        .message-row.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            border-radius: 11px;
+            display: grid;
+            place-items: center;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .assistant .avatar {
+            background: var(--assistant);
+            color: var(--primary);
+        }
+
+        .user .avatar {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .bubble {
+            padding: 13px 15px;
+            border-radius: 16px;
+            line-height: 1.55;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .assistant .bubble {
+            background: var(--assistant);
+            color: #312e81;
+            border-top-left-radius: 5px;
+        }
+
+        .user .bubble {
+            background: var(--user);
+            color: white;
+            border-top-right-radius: 5px;
+        }
+
+        .typing {
+            display: inline-flex;
+            gap: 5px;
+            align-items: center;
+            height: 20px;
+        }
+
+        .typing span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #6366f1;
+            animation: pulse 1.1s infinite;
+        }
+
+        .typing span:nth-child(2) {
+            animation-delay: 0.15s;
+        }
+
+        .typing span:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes pulse {
+            0%,
+            60%,
+            100% {
+                opacity: 0.25;
+                transform: translateY(0);
+            }
+
+            30% {
+                opacity: 1;
+                transform: translateY(-3px);
+            }
+        }
+
+        .composer-wrap {
+            border-top: 1px solid var(--border);
+            padding: 16px;
+            background: rgba(248, 250, 252, 0.8);
+        }
+
+        .composer {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 8px;
+            border: 1px solid var(--border);
+            background: white;
+            border-radius: 15px;
+        }
+
+        textarea {
+            flex: 1;
+            resize: none;
+            border: none;
+            outline: none;
+            min-height: 44px;
+            max-height: 140px;
+            padding: 11px 10px;
+            color: var(--text);
+            background: transparent;
+            line-height: 1.45;
+        }
+
+        textarea::placeholder {
+            color: #94a3b8;
+        }
+
+        .send-button {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            background: var(--primary);
+            color: white;
+            font-size: 18px;
+            display: grid;
+            place-items: center;
+            transition: 0.18s ease;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+
+        .send-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.45;
+        }
+
+        .composer-note {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 10px;
+            margin-top: 8px;
+        }
+
+        .footer {
+            color: #94a3b8;
+            text-align: center;
+            padding: 0 20px 24px;
+            font-size: 11px;
+        }
+
+        @media (max-width: 860px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .hero-card {
+                grid-column: 1 / -1;
+            }
+
+            .chat-card {
+                min-height: 650px;
+            }
+        }
+
+        @media (max-width: 620px) {
+            .topbar {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .top-actions {
+                width: 100%;
+            }
+
+            .top-actions a {
+                flex: 1;
+                text-align: center;
+            }
+
+            .sidebar {
+                display: flex;
+            }
+
+            .hero-card h1 {
+                font-size: 26px;
+            }
+
+            .messages {
+                padding: 18px;
+            }
+
+            .message-row {
+                max-width: 95%;
+            }
+
+            .chat-card {
+                min-height: 620px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="page">
+
+    <header class="topbar">
+        <div class="brand">
+            <div class="logo">AI</div>
+
+            <div>
+                <div class="brand-name">
+                    Personal AI Assistant
+                </div>
+
+                <div class="brand-subtitle">
+                    AI-powered assistant demo
+                </div>
+            </div>
+        </div>
+
+        <div class="top-actions">
+            <a
+                class="link-button"
+                href="/docs"
+                target="_blank"
+                rel="noopener"
+            >
+                API Docs
+            </a>
+
+            <a
+                class="link-button telegram-button"
+                href="https://t.me/teamddemobot"
+                target="_blank"
+                rel="noopener"
+            >
+                Open Telegram
+            </a>
+        </div>
+    </header>
+
+
+    <main class="content">
+
+        <aside class="sidebar">
+
+            <section class="hero-card">
+
+                <div class="eyebrow">
+                    <span class="status-dot"></span>
+                    <span id="status-text">
+                        Checking service
+                    </span>
+                </div>
+
+                <h1>
+                    Ask your AI assistant anything.
+                </h1>
+
+                <p>
+                    A cloud-deployed personal AI assistant built with
+                    FastAPI, Gemini, PostgreSQL, pgvector, Telegram,
+                    and Docker.
+                </p>
+
+                <div class="stack">
+                    <span class="badge">FastAPI</span>
+                    <span class="badge">Gemini</span>
+                    <span class="badge">PostgreSQL</span>
+                    <span class="badge">pgvector</span>
+                    <span class="badge">Telegram</span>
+                    <span class="badge">Docker</span>
+                </div>
+
+            </section>
+
+
+            <section class="info-card">
+                <h3>Try an example</h3>
+
+                <p>
+                    Click one of these prompts or type your own question.
+                </p>
+
+                <div class="examples">
+
+                    <button
+                        class="example-button"
+                        data-prompt="What is RAG and how does it work?"
+                    >
+                        Explain RAG
+                    </button>
+
+                    <button
+                        class="example-button"
+                        data-prompt="Explain FastAPI in simple terms."
+                    >
+                        Explain FastAPI
+                    </button>
+
+                    <button
+                        class="example-button"
+                        data-prompt="What are AI agents and how are they different from normal chatbots?"
+                    >
+                        Explain AI agents
+                    </button>
+
+                </div>
+            </section>
+
+
+            <section class="info-card">
+                <h3>Demo environment</h3>
+
+                <p>
+                    This is a portfolio/demo deployment. Do not send
+                    passwords, private documents, API keys, or other
+                    sensitive information.
+                </p>
+            </section>
+
+        </aside>
+
+
+        <section class="chat-card">
+
+            <div class="chat-header">
+
+                <div>
+                    <div class="chat-title">
+                        AI Assistant
+                    </div>
+
+                    <div class="chat-subtitle">
+                        Powered by Gemini on Render
+                    </div>
+                </div>
+
+                <button
+                    id="clear-button"
+                    class="clear-button"
+                    type="button"
+                >
+                    Clear chat
+                </button>
+
+            </div>
+
+
+            <div
+                id="messages"
+                class="messages"
+                aria-live="polite"
+            >
+
+                <div class="message-row assistant">
+
+                    <div class="avatar">
+                        AI
+                    </div>
+
+                    <div class="bubble">
+Hello! I'm the Personal AI Assistant demo.
+
+Ask me about software engineering, Python, FastAPI, AI, RAG, cloud architecture, or anything else you'd like to explore.
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="composer-wrap">
+
+                <form
+                    id="chat-form"
+                    class="composer"
+                >
+
+                    <textarea
+                        id="message-input"
+                        rows="1"
+                        maxlength="1500"
+                        placeholder="Message the assistant..."
+                        autocomplete="off"
+                        required
+                    ></textarea>
+
+                    <button
+                        id="send-button"
+                        class="send-button"
+                        type="submit"
+                        aria-label="Send message"
+                    >
+                        ↑
+                    </button>
+
+                </form>
+
+                <div class="composer-note">
+                    Demo responses are AI-generated and may contain mistakes.
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <footer class="footer">
+        Personal AI Assistant · FastAPI · Gemini · PostgreSQL · Render
+    </footer>
+
+</div>
+
+
+<script>
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("message-input");
+    const messages = document.getElementById("messages");
+    const sendButton = document.getElementById("send-button");
+    const clearButton = document.getElementById("clear-button");
+    const statusText = document.getElementById("status-text");
+
+    let isSending = false;
+
+
+    function scrollToBottom() {
+        messages.scrollTop = messages.scrollHeight;
+    }
+
+
+    function resizeTextarea() {
+        input.style.height = "auto";
+
+        input.style.height = Math.min(
+            input.scrollHeight,
+            140
+        ) + "px";
+    }
+
+
+    function createMessage(role, text) {
+        const row = document.createElement("div");
+
+        row.className =
+            "message-row " +
+            (role === "user" ? "user" : "assistant");
+
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.textContent =
+            role === "user" ? "You" : "AI";
+
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = text;
+
+
+        row.appendChild(avatar);
+        row.appendChild(bubble);
+
+        messages.appendChild(row);
+
+        scrollToBottom();
+
+        return row;
+    }
+
+
+    function createTypingMessage() {
+        const row = document.createElement("div");
+        row.className = "message-row assistant";
+
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.textContent = "AI";
+
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+
+
+        const typing = document.createElement("div");
+        typing.className = "typing";
+
+        typing.innerHTML = `
+            <span></span>
+            <span></span>
+            <span></span>
+        `;
+
+
+        bubble.appendChild(typing);
+
+        row.appendChild(avatar);
+        row.appendChild(bubble);
+
+        messages.appendChild(row);
+
+        scrollToBottom();
+
+        return row;
+    }
+
+
+    async function sendMessage(message) {
+        if (!message || isSending) {
+            return;
+        }
+
+        isSending = true;
+        sendButton.disabled = true;
+        input.disabled = true;
+
+
+        createMessage("user", message);
+
+        const typingMessage =
+            createTypingMessage();
+
+
+        try {
+            const response = await fetch(
+                "/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: message,
+                        source: "web"
+                    })
+                }
+            );
+
+
+            if (!response.ok) {
+                throw new Error(
+                    "Request failed with status " +
+                    response.status
+                );
+            }
+
+
+            const data = await response.json();
+
+
+            typingMessage.remove();
+
+
+            createMessage(
+                "assistant",
+                data.response ||
+                    "I could not generate a response."
+            );
+
+        } catch (error) {
+
+            console.error(error);
+
+            typingMessage.remove();
+
+            createMessage(
+                "assistant",
+                "I couldn't reach the assistant right now. " +
+                "Please try again in a moment."
+            );
+
+        } finally {
+
+            isSending = false;
+
+            sendButton.disabled = false;
+            input.disabled = false;
+
+            input.value = "";
+
+            resizeTextarea();
+
+            input.focus();
+        }
+    }
+
+
+    form.addEventListener(
+        "submit",
+        async function (event) {
+            event.preventDefault();
+
+            const message =
+                input.value.trim();
+
+            await sendMessage(message);
+        }
+    );
+
+
+    input.addEventListener(
+        "keydown",
+        function (event) {
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey
+            ) {
+                event.preventDefault();
+
+                form.requestSubmit();
+            }
+        }
+    );
+
+
+    input.addEventListener(
+        "input",
+        resizeTextarea
+    );
+
+
+    clearButton.addEventListener(
+        "click",
+        function () {
+            messages.innerHTML = "";
+
+            createMessage(
+                "assistant",
+                "Chat cleared. What would you like to ask?"
+            );
+
+            input.focus();
+        }
+    );
+
+
+    document
+        .querySelectorAll(".example-button")
+        .forEach(function (button) {
+
+            button.addEventListener(
+                "click",
+                function () {
+                    const prompt =
+                        button.dataset.prompt;
+
+                    input.value = prompt;
+
+                    resizeTextarea();
+
+                    input.focus();
+                }
+            );
+
+        });
+
+
+    async function checkHealth() {
+        try {
+            const response =
+                await fetch("/health");
+
+            if (!response.ok) {
+                throw new Error(
+                    "Health check failed"
+                );
+            }
+
+            statusText.textContent =
+                "Service online";
+
+        } catch (error) {
+
+            statusText.textContent =
+                "Service unavailable";
+        }
+    }
+
+
+    checkHealth();
+
+    input.focus();
+</script>
+
+</body>
+</html>

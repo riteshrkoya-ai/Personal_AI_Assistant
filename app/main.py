@@ -1,8 +1,10 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from telegram import Update
 
 from app.api.agent import router as agent_router
@@ -23,15 +25,25 @@ from app.services.llm_client import warm_up_model
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+WEB_INDEX = (
+    Path(__file__).resolve().parent
+    / "web"
+    / "index.html"
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_database_tables()
-    asyncio.create_task(warm_up_model())
+
+    asyncio.create_task(
+        warm_up_model()
+    )
 
     telegram_application = None
 
     if settings.telegram_mode.lower() == "webhook":
+
         if not settings.telegram_bot_token:
             raise RuntimeError(
                 "TELEGRAM_BOT_TOKEN is required in webhook mode."
@@ -47,8 +59,10 @@ async def lifespan(app: FastAPI):
                 "TELEGRAM_WEBHOOK_SECRET is required in webhook mode."
             )
 
-        telegram_application = build_telegram_application(
-            webhook=True
+        telegram_application = (
+            build_telegram_application(
+                webhook=True
+            )
         )
 
         await telegram_application.initialize()
@@ -62,7 +76,9 @@ async def lifespan(app: FastAPI):
 
         await telegram_application.start()
 
-        app.state.telegram_application = telegram_application
+        app.state.telegram_application = (
+            telegram_application
+        )
 
         logger.info(
             "Telegram webhook configured: %s",
@@ -71,7 +87,9 @@ async def lifespan(app: FastAPI):
 
     try:
         yield
+
     finally:
+
         if telegram_application is not None:
             await telegram_application.stop()
             await telegram_application.shutdown()
@@ -84,6 +102,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 app.include_router(health_router)
 app.include_router(agent_router)
 app.include_router(chat_router)
@@ -95,10 +114,26 @@ app.include_router(future_me_router)
 app.include_router(telegram_webhook_router)
 
 
-@app.get("/")
+@app.get(
+    "/",
+    include_in_schema=False,
+)
 async def root():
+    return FileResponse(
+        WEB_INDEX
+    )
+
+
+@app.get(
+    "/api/info",
+    tags=["meta"],
+)
+async def api_info():
     return {
-        "message": "AI Personal Assistant API is running",
+        "message": (
+            "AI Personal Assistant API is running"
+        ),
         "docs": "/docs",
         "health": "/health",
+        "database_health": "/health/db",
     }
