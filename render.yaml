@@ -24,7 +24,7 @@ services:
           property: connectionString
 
       - key: LLM_MODEL
-        value: gemini/gemini-2.5-flash
+        value: gemini/gemini-3.6-flash
 
       - key: GEMINI_API_KEY
         sync: false
