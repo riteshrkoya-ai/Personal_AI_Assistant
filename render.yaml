@@ -11,7 +11,8 @@ services:
     region: virginia
     branch: feature/render-deploy-safe
     healthCheckPath: /health
-    dockerCommand: /bin/sh -c 'uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}'
+
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
 
     envVars:
       - key: APP_ENV
