@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 from telegram import Update
 
@@ -19,6 +19,7 @@ from app.api.telegram_webhook import router as telegram_webhook_router
 from app.bot.application import build_telegram_application
 from app.core.config import get_settings
 from app.core.database import create_database_tables
+from app.core.security import require_trusted_caller
 from app.services.llm_client import warm_up_model
 
 
@@ -95,23 +96,42 @@ async def lifespan(app: FastAPI):
             await telegram_application.shutdown()
 
 
+IS_PRODUCTION = settings.app_env.lower() == "production"
+
+# The interactive docs enumerate every route and payload shape, so they
+# stay off on the public deployment.
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="AI Personal Assistant MVP backend",
     lifespan=lifespan,
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
+# Routes that read or write stored user data. They accept a
+# telegram_chat_id in the body, so they must not be callable by anyone
+# who happens to know the URL.
+PROTECTED = [Depends(require_trusted_caller)]
 
+
+# Public: Render's health check probes this.
 app.include_router(health_router)
-app.include_router(agent_router)
+
+# Public: serves the browser chat UI. Guards its own privileged
+# telegram_chat_id field internally.
 app.include_router(chat_router)
-app.include_router(memory_router)
-app.include_router(reminders_router)
-app.include_router(study_router)
-app.include_router(daily_summary_router)
-app.include_router(future_me_router)
+
+# Public: authenticated by Telegram's own webhook secret header.
 app.include_router(telegram_webhook_router)
+
+app.include_router(agent_router, dependencies=PROTECTED)
+app.include_router(memory_router, dependencies=PROTECTED)
+app.include_router(reminders_router, dependencies=PROTECTED)
+app.include_router(study_router, dependencies=PROTECTED)
+app.include_router(daily_summary_router, dependencies=PROTECTED)
+app.include_router(future_me_router, dependencies=PROTECTED)
 
 
 @app.get(

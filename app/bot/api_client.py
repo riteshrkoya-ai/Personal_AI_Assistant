@@ -1,9 +1,18 @@
 import httpx
 
 from app.core.config import get_settings
+from app.core.security import API_KEY_HEADER
 
 
 settings = get_settings()
+
+
+def _auth_headers() -> dict[str, str]:
+    """Attach the shared secret so protected routes accept bot traffic."""
+    if not settings.internal_api_key:
+        return {}
+
+    return {API_KEY_HEADER: settings.internal_api_key}
 
 
 async def post_to_backend(path: str, payload: dict, timeout: float = 120.0) -> dict:
@@ -11,6 +20,7 @@ async def post_to_backend(path: str, payload: dict, timeout: float = 120.0) -> d
         response = await client.post(
             f"{settings.api_base_url}{path}",
             json=payload,
+            headers=_auth_headers(),
         )
         response.raise_for_status()
         return response.json()

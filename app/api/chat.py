@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.database import AsyncSessionLocal
+from app.core.security import caller_is_trusted
 from app.services.agent_service import run_agent
 from app.services.chat_history_service import save_chat_message
 from app.services.llm_client import generate_chat_response
@@ -26,7 +27,21 @@ class ChatResponse(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    caller_trusted: bool = Depends(caller_is_trusted),
+) -> ChatResponse:
+    # This route stays public so the browser chat UI works, but naming a
+    # telegram_chat_id reads and writes that user's stored history and
+    # memories, so it requires the shared secret.
+    if request.telegram_chat_id is not None and not caller_trusted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "telegram_chat_id requires a valid X-API-Key header."
+            ),
+        )
+
     user_id: int | None = None
 
     async with AsyncSessionLocal() as session:
