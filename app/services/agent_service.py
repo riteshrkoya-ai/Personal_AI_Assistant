@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.agent_tools import AGENT_TOOL_SCHEMAS, execute_agent_tool
+from app.services.agent_task_workflows import (
+    build_task_plan,
+    format_task_tool_result,
+    remember_task_tool_result,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -715,6 +720,14 @@ def _deterministic_plan(
             ],
         }
 
+    task_plan = build_task_plan(
+        message=clean_message,
+        user_id=user_id,
+    )
+
+    if task_plan is not None:
+        return task_plan
+
     reminder_plan = _parse_simple_reminder(
         message=clean_message,
         user_id=user_id,
@@ -811,6 +824,13 @@ def _format_tool_results(tool_results: list[dict[str, Any]]) -> str:
         ]
 
         return "Here are your pending reminders:\n" + "\n".join(reminder_lines)
+
+    task_response = format_task_tool_result(
+        first_result
+    )
+
+    if task_response is not None:
+        return task_response
 
     if tool_name == "get_daily_summary":
         return str(first_result.get("summary_text", "Here is your daily summary."))
@@ -974,6 +994,12 @@ async def run_agent(
                 tool_name=tool_name,
                 arguments=arguments,
             )
+
+            remember_task_tool_result(
+                user_id=user_id,
+                result=result,
+            )
+
             tool_results.append(result)
 
         except Exception as exc:
