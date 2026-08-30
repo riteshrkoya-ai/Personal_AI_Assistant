@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     api_base_url: str = "http://api:8000"
 
+    # Shared secret guarding the REST API. The bot sends it as X-API-Key.
+    # Unset locally; required in production for protected routes.
+    internal_api_key: str | None = None
+
     embedding_backend: str = "sentence_transformers"
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dimension: int = 384

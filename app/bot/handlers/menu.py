@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 from app.bot.api_client import (
     cancel_reminder_api,
+    complete_task_api,
     create_reminder_api,
     delete_memory_api,
     disable_daily_summary_setting_api,
@@ -16,6 +17,7 @@ from app.bot.api_client import (
     list_reminders_api,
     list_study_plans_api,
     list_study_tasks_api,
+    list_tasks_api,
     update_daily_summary_setting_api,
 )
 from app.bot.auth import is_authorized, send_unauthorized_callback
@@ -27,6 +29,7 @@ from app.bot.formatters import (
     format_reminder_items,
     format_study_plans,
     format_study_tasks,
+    format_task_items,
 )
 from app.bot.handlers.future_me import (
     cancel_selected_future_me_goal,
@@ -45,10 +48,12 @@ from app.bot.keyboards import (
     back_to_memory_keyboard,
     back_to_reminders_keyboard,
     back_to_study_keyboard,
+    back_to_tasks_keyboard,
     cancel_reminder_keyboard,
     cancel_study_plan_keyboard,
     complete_future_me_task_keyboard,
     complete_study_task_keyboard,
+    complete_task_keyboard,
     daily_summary_menu_keyboard,
     daily_summary_time_keyboard,
     delete_memory_keyboard,
@@ -64,6 +69,7 @@ from app.bot.keyboards import (
     reminder_time_keyboard,
     study_menu_keyboard,
     study_reminder_time_keyboard,
+    task_menu_keyboard,
 )
 from app.bot.state import clear_active_flow
 from app.core.config import get_settings
@@ -111,6 +117,14 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
+    if data == "menu:tasks":
+        clear_active_flow(context)
+        await query.edit_message_text(
+            "Task options:",
+            reply_markup=task_menu_keyboard(),
+        )
+        return
+
     if data == "menu:study":
         clear_active_flow(context)
         await query.edit_message_text(
@@ -142,6 +156,7 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "Available modules:\n"
             "• Memory — save, view, search, and delete personal memories\n"
             "• Reminders — create, view, cancel, and receive reminders\n"
+            "• Tasks — add, view, and complete simple to-do tasks\n"
             "• Study — create study plans, complete tasks, and add study reminders\n"
             "• Daily Summary — view or schedule a daily activity summary\n"
             "• Future Me — set long-term goals, create weekly plans, and track progress\n\n"
@@ -153,7 +168,10 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             "/forget - choose a memory to delete\n"
             "/remind YYYY-MM-DD HH:MM <message> - create a reminder\n"
             "/reminders - view reminders\n"
-            "/cancelreminder - choose a reminder to cancel\n\n"
+            "/cancelreminder - choose a reminder to cancel\n"
+            "/task <text> - add a to-do task\n"
+            "/tasks - view pending tasks\n"
+            "/donetask - choose a task to complete\n\n"
             "MVP focus:\n"
             "This assistant is local-first, Telegram-based, multi-user, and designed with user data isolation.",
             reply_markup=back_to_main_keyboard(),
@@ -563,6 +581,58 @@ async def handle_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             await query.edit_message_text(
                 "I could not find that memory for your account.",
                 reply_markup=back_to_memory_keyboard(),
+            )
+        return
+
+    # Task callbacks
+
+    if data == "task:create":
+        context.user_data["active_flow"] = "task_message"
+        await query.edit_message_text(
+            "What's the task?",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Cancel", callback_data="flow:cancel")]]
+            ),
+        )
+        return
+
+    if data == "task:list":
+        tasks = await list_tasks_api(chat_id)
+        await query.edit_message_text(
+            format_task_items(tasks),
+            reply_markup=back_to_tasks_keyboard(),
+        )
+        return
+
+    if data == "task:complete_menu":
+        tasks = await list_tasks_api(chat_id)
+
+        if not tasks:
+            await query.edit_message_text(
+                "No pending tasks found.",
+                reply_markup=back_to_tasks_keyboard(),
+            )
+            return
+
+        await query.edit_message_text(
+            "Select a task to complete:",
+            reply_markup=complete_task_keyboard(tasks),
+        )
+        return
+
+    if data.startswith("task_complete:"):
+        task_id = int(data.split(":", 1)[1])
+        completed = await complete_task_api(chat_id, task_id)
+
+        if completed:
+            await query.edit_message_text(
+                "Marked that task as done.",
+                reply_markup=back_to_tasks_keyboard(),
+            )
+        else:
+            await query.edit_message_text(
+                "I could not find that pending task.",
+                reply_markup=back_to_tasks_keyboard(),
             )
         return
 

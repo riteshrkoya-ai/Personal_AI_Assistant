@@ -51,6 +51,27 @@ def format_reminder_items(reminders: list[dict]) -> str:
 
     return "\n".join(lines)
 
+def format_task_items(tasks: list[dict]) -> str:
+    if not tasks:
+        return "No pending tasks found."
+
+    lines = ["Your pending tasks:\n"]
+
+    for task in tasks:
+        title = task.get("title", "")
+        due_date = task.get("due_date")
+
+        if due_date:
+            lines.append(f"• {title} (due {format_reminder_datetime(due_date)})")
+        else:
+            lines.append(f"• {title}")
+
+    lines.append("\nTo complete a task, use:")
+    lines.append("Tasks Menu → Complete Task")
+
+    return "\n".join(lines)
+
+
 def format_study_plans(study_plans: list[dict]) -> str:
     if not study_plans:
         return "No active study plans found."

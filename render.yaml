@@ -44,6 +44,9 @@ services:
       - key: API_BASE_URL
         value: http://127.0.0.1:10000
 
+      - key: INTERNAL_API_KEY
+        generateValue: true
+
       - key: TELEGRAM_BOT_TOKEN
         sync: false
 

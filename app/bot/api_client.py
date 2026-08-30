@@ -1,9 +1,18 @@
 import httpx
 
 from app.core.config import get_settings
+from app.core.security import API_KEY_HEADER
 
 
 settings = get_settings()
+
+
+def _auth_headers() -> dict[str, str]:
+    """Attach the shared secret so protected routes accept bot traffic."""
+    if not settings.internal_api_key:
+        return {}
+
+    return {API_KEY_HEADER: settings.internal_api_key}
 
 
 async def post_to_backend(path: str, payload: dict, timeout: float = 120.0) -> dict:
@@ -11,6 +20,7 @@ async def post_to_backend(path: str, payload: dict, timeout: float = 120.0) -> d
         response = await client.post(
             f"{settings.api_base_url}{path}",
             json=payload,
+            headers=_auth_headers(),
         )
         response.raise_for_status()
         return response.json()
@@ -98,6 +108,45 @@ async def cancel_reminder_api(chat_id: int, reminder_id: int) -> bool:
         },
     )
     return bool(data.get("cancelled"))
+
+
+async def create_task_api(
+    chat_id: int,
+    title: str,
+    due_date=None,
+) -> dict:
+    return await post_to_backend(
+        "/tasks",
+        {
+            "telegram_chat_id": chat_id,
+            "title": title,
+            "due_date": due_date.isoformat() if due_date else None,
+            "source": "telegram",
+        },
+    )
+
+
+async def list_tasks_api(chat_id: int, limit: int = 20) -> list[dict]:
+    data = await post_to_backend(
+        "/tasks/list",
+        {
+            "telegram_chat_id": chat_id,
+            "status": "pending",
+            "limit": limit,
+        },
+    )
+    return data.get("tasks", [])
+
+
+async def complete_task_api(chat_id: int, task_id: int) -> bool:
+    data = await post_to_backend(
+        "/tasks/complete",
+        {
+            "telegram_chat_id": chat_id,
+            "task_id": task_id,
+        },
+    )
+    return bool(data.get("completed"))
 
 async def create_study_plan_api(
     chat_id: int,

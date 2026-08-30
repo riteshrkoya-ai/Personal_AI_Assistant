@@ -13,6 +13,7 @@ from app.services.future_me_service import (
 from app.services.memory_service import create_memory, search_user_memories
 from app.services.reminder_service import create_reminder, list_user_reminders
 from app.services.study_service import create_study_plan
+from app.services.task_service import complete_user_task, create_task, list_user_tasks
 
 settings = get_settings()
 
@@ -100,6 +101,65 @@ AGENT_TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_task",
+            "description": "Create a simple to-do task for the current authenticated user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The task to do.",
+                    },
+                    "due_date_iso": {
+                        "type": "string",
+                        "description": (
+                            "Optional due date/time in ISO format. "
+                            "Example: 2026-07-26T20:00:00-04:00"
+                        ),
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "List pending to-do tasks for the current authenticated user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of tasks to return.",
+                        "default": 20,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_task",
+            "description": "Mark an existing task as completed for the current authenticated user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "integer",
+                        "description": "ID of the task to mark completed.",
+                    },
+                },
+                "required": ["task_id"],
             },
         },
     },
@@ -222,6 +282,28 @@ def parse_agent_datetime(value: str) -> datetime:
 
     if parsed <= now:
         raise ValueError("Reminder time must be in the future.")
+
+    return parsed
+
+
+def parse_optional_task_due_date(value: str | None) -> datetime | None:
+    clean_value = " ".join((value or "").split()).strip()
+
+    if not clean_value:
+        return None
+
+    normalized = clean_value.replace("Z", "+00:00")
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            "due_date_iso must be a valid ISO datetime. "
+            "Example: 2026-07-26T20:00:00-04:00"
+        ) from exc
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo(settings.timezone))
 
     return parsed
 
@@ -356,6 +438,73 @@ async def execute_agent_tool(
                 }
                 for reminder in reminders
             ],
+        }
+
+    if tool_name == "create_task":
+        title = str(args.get("title", "")).strip()
+        due_date = parse_optional_task_due_date(args.get("due_date_iso"))
+
+        if not title:
+            raise ValueError("Task title cannot be empty.")
+
+        task = await create_task(
+            session=session,
+            user_id=user_id,
+            title=title,
+            due_date=due_date,
+            source="agent",
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "task": {
+                "id": task.id,
+                "title": task.title,
+                "due_date": task.due_date.isoformat() if task.due_date else None,
+                "status": task.status,
+                "source": task.source,
+            },
+        }
+
+    if tool_name == "list_tasks":
+        limit = int(args.get("limit", 20))
+
+        tasks = await list_user_tasks(
+            session=session,
+            user_id=user_id,
+            status="pending",
+            limit=limit,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": True,
+            "tasks": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "due_date": task.due_date.isoformat() if task.due_date else None,
+                    "status": task.status,
+                    "source": task.source,
+                }
+                for task in tasks
+            ],
+        }
+
+    if tool_name == "complete_task":
+        task_id = int(args.get("task_id"))
+
+        completed = await complete_user_task(
+            session=session,
+            user_id=user_id,
+            task_id=task_id,
+        )
+
+        return {
+            "tool": tool_name,
+            "success": completed,
+            "task_id": task_id,
         }
 
     if tool_name == "get_daily_summary":

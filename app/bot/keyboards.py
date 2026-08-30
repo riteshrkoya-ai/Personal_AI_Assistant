@@ -11,7 +11,10 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Reminders", callback_data="menu:reminders"),
             ],
             [
+                InlineKeyboardButton("Tasks", callback_data="menu:tasks"),
                 InlineKeyboardButton("Study", callback_data="menu:study"),
+            ],
+            [
                 InlineKeyboardButton("Future Me", callback_data="menu:future_me"),
             ],
             [
@@ -55,6 +58,23 @@ def reminder_menu_keyboard() -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+def task_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Add Task", callback_data="task:create"),
+                InlineKeyboardButton("View Tasks", callback_data="task:list"),
+            ],
+            [
+                InlineKeyboardButton("Complete Task", callback_data="task:complete_menu"),
+            ],
+            [
+                InlineKeyboardButton("Back", callback_data="menu:main"),
+            ],
+        ]
+    )
+
 
 def study_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -191,6 +211,14 @@ def back_to_study_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+
+def back_to_tasks_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("Tasks Menu", callback_data="menu:tasks")]
+        ]
+    )
+
 def delete_memory_keyboard(memories: list[dict]) -> InlineKeyboardMarkup:
     rows = []
 
@@ -228,6 +256,26 @@ def cancel_reminder_keyboard(reminders: list[dict]) -> InlineKeyboardMarkup:
         )
 
     rows.append([InlineKeyboardButton("Back", callback_data="menu:reminders")])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def complete_task_keyboard(tasks: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+
+    for task in tasks:
+        task_id = task.get("id")
+        title = task.get("title", "")
+
+        label = f"Done: {title[:35]}"
+        if len(title) > 35:
+            label += "..."
+
+        rows.append(
+            [InlineKeyboardButton(label, callback_data=f"task_complete:{task_id}")]
+        )
+
+    rows.append([InlineKeyboardButton("Back", callback_data="menu:tasks")])
 
     return InlineKeyboardMarkup(rows)
 
