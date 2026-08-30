@@ -109,6 +109,45 @@ async def cancel_reminder_api(chat_id: int, reminder_id: int) -> bool:
     )
     return bool(data.get("cancelled"))
 
+
+async def create_task_api(
+    chat_id: int,
+    title: str,
+    due_date=None,
+) -> dict:
+    return await post_to_backend(
+        "/tasks",
+        {
+            "telegram_chat_id": chat_id,
+            "title": title,
+            "due_date": due_date.isoformat() if due_date else None,
+            "source": "telegram",
+        },
+    )
+
+
+async def list_tasks_api(chat_id: int, limit: int = 20) -> list[dict]:
+    data = await post_to_backend(
+        "/tasks/list",
+        {
+            "telegram_chat_id": chat_id,
+            "status": "pending",
+            "limit": limit,
+        },
+    )
+    return data.get("tasks", [])
+
+
+async def complete_task_api(chat_id: int, task_id: int) -> bool:
+    data = await post_to_backend(
+        "/tasks/complete",
+        {
+            "telegram_chat_id": chat_id,
+            "task_id": task_id,
+        },
+    )
+    return bool(data.get("completed"))
+
 async def create_study_plan_api(
     chat_id: int,
     topic: str,

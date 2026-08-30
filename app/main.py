@@ -15,6 +15,7 @@ from app.api.health import router as health_router
 from app.api.memory import router as memory_router
 from app.api.reminders import router as reminders_router
 from app.api.study import router as study_router
+from app.api.tasks import router as tasks_router
 from app.api.telegram_webhook import router as telegram_webhook_router
 from app.bot.application import build_telegram_application
 from app.core.config import get_settings
@@ -129,6 +130,7 @@ app.include_router(telegram_webhook_router)
 app.include_router(agent_router, dependencies=PROTECTED)
 app.include_router(memory_router, dependencies=PROTECTED)
 app.include_router(reminders_router, dependencies=PROTECTED)
+app.include_router(tasks_router, dependencies=PROTECTED)
 app.include_router(study_router, dependencies=PROTECTED)
 app.include_router(daily_summary_router, dependencies=PROTECTED)
 app.include_router(future_me_router, dependencies=PROTECTED)

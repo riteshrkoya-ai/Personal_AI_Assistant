@@ -29,6 +29,7 @@ from app.bot.handlers.reminders import (
     reminders_command,
     send_due_reminders_job,
 )
+from app.bot.handlers.tasks import done_task_command, task_command, tasks_command
 from app.core.config import get_settings
 
 
@@ -66,6 +67,10 @@ def build_telegram_application(*, webhook: bool = False) -> Application:
     application.add_handler(
         CommandHandler("cancelreminder", cancel_reminder_command)
     )
+
+    application.add_handler(CommandHandler("task", task_command))
+    application.add_handler(CommandHandler("tasks", tasks_command))
+    application.add_handler(CommandHandler("donetask", done_task_command))
 
     application.add_handler(
         CallbackQueryHandler(handle_menu_callback)

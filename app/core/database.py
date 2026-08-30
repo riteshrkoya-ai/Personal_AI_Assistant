@@ -62,6 +62,7 @@ async def create_database_tables() -> None:
     from app.models.personal_memory import PersonalMemory  # noqa: F401
     from app.models.reminder import Reminder  # noqa: F401
     from app.models.study import StudyPlan, StudyTask  # noqa: F401
+    from app.models.task import Task  # noqa: F401
     from app.models.user import User  # noqa: F401
 
     async with engine.begin() as conn:
