@@ -1,15 +1,15 @@
 databases:
-  - name: personal-ai-assistant-db
+  - name: amulya-assistant-db
     plan: free
     region: virginia
 
 services:
   - type: web
-    name: personal-ai-assistant-api
+    name: amulya-personal-ai-assistant
     runtime: docker
     plan: free
     region: virginia
-    branch: develop
+    branch: deploy/amulya
     healthCheckPath: /health
 
     dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
@@ -20,7 +20,7 @@ services:
 
       - key: DATABASE_URL
         fromDatabase:
-          name: personal-ai-assistant-db
+          name: amulya-assistant-db
           property: connectionString
 
       - key: LLM_MODEL
@@ -35,11 +35,21 @@ services:
       - key: TIMEZONE
         value: America/New_York
 
+      # Pass 1 deploys with the bot switched off so the service can boot and
+      # report its real URL. main.py only builds the Telegram application when
+      # this is exactly "webhook", so any other value starts the API and the
+      # web chat with no bot attached.
+      #
+      # Pass 2: set TELEGRAM_MODE=webhook in the Render dashboard once
+      # TELEGRAM_WEBHOOK_URL, TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET
+      # are filled in, then redeploy.
       - key: TELEGRAM_MODE
-        value: webhook
+        value: disabled
 
+      # Set in the dashboard after the first deploy, as
+      # https://<your-service>.onrender.com/telegram/webhook
       - key: TELEGRAM_WEBHOOK_URL
-        value: https://personal-ai-assistant-api-tns7.onrender.com/telegram/webhook
+        sync: false
 
       - key: API_BASE_URL
         value: http://127.0.0.1:10000
@@ -47,6 +57,9 @@ services:
       - key: INTERNAL_API_KEY
         generateValue: true
 
+      # Must be a bot token you created yourself with @BotFather.
+      # Never reuse the team's token: startup calls set_webhook, and Telegram
+      # allows only one webhook per token, so it would repoint the team's bot.
       - key: TELEGRAM_BOT_TOKEN
         sync: false
 
